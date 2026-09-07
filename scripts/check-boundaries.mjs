@@ -28,6 +28,16 @@ const RULES = [
     reason: 'a store binds the model to one database and nothing else',
   },
   {
+    pkg: 'store-postgres',
+    allow: ['@tollbooth/core', 'pg'],
+    reason: 'a store binds the model to one database and nothing else',
+  },
+  {
+    pkg: 'store-conformance',
+    allow: ['@tollbooth/core'],
+    reason: 'the conformance suite tests the model contract, not any one backend',
+  },
+  {
     pkg: 'mcp',
     allow: ['@tollbooth/core', '@modelcontextprotocol/sdk', 'zod'],
     reason:
