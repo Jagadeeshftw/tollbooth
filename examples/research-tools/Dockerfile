@@ -16,9 +16,13 @@ FROM node:22-slim
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app /app
-# The SQLite database holds entitlements people have paid for. Mount a volume
-# here, or a redeploy takes their credits with it.
-VOLUME /data
+# No VOLUME directive: Railway rejects it and manages persistence itself.
+#
+# It is not needed here anyway. Set DATABASE_URL and the server uses Postgres,
+# which is the only way entitlements survive a container being replaced. The
+# SQLite path below is the local fallback; if you run this image under plain
+# Docker *without* DATABASE_URL, mount a volume at /data yourself or a redeploy
+# takes people's credits with it.
 ENV TOLLBOOTH_DB=/data/tollbooth.sqlite
 EXPOSE 8080
 CMD ["node", "examples/research-tools/dist/http.js"]
