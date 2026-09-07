@@ -4,36 +4,8 @@ import { Container } from "./container";
 import { Badge } from "./badge";
 import { SectionHeading } from "./section-heading";
 import { SubHeading } from "./subheading";
-import { QUICKSTART, REPO, SERVER } from "@/content/measurements";
-
-const RUN = `git clone ${REPO}
-cd tollbooth
-npm install
-npm run build
-
-export MOOVE_API_KEY=mk_live_...
-# Only if your key names a different host. Do not guess it.
-# export MOOVE_API_BASE_URL=https://api.moove.xyz
-
-node examples/research-tools/dist/stdio.js`;
-
-const TOOL = `server.paidTool(
-  'fetch_readable',
-  'Fetch a web page and return its readable text.',
-  { sku: 'research', cost: 1 },   // an expensive tool can cost more
-  { url: z.string() },
-  { readOnlyHint: true },
-  async (args) => readable(String(args.url))
-);`;
-
-const CLIENT = `{
-  "mcpServers": {
-    "tollbooth-research": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "${SERVER}/mcp"]
-    }
-  }
-}`;
+import { QUICKSTART } from "@/content/measurements";
+import { CLIENT, RUN, TOOL } from "@/content/snippets";
 
 export const Quickstart = () => (
   <Container className="border-divide border-x px-4 py-20 md:px-8" as="section">

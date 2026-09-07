@@ -12,7 +12,7 @@
  */
 
 export const REPO = "https://github.com/Jagadeeshftw/tollbooth";
-export const WRITEUP = `${REPO}/blob/main/docs/does-the-agent-come-back.md`;
+export const WRITEUP = "/docs/results";
 export const HARNESS = `${REPO}/tree/main/packages/mcp/harness`;
 export const QUICKSTART = `${REPO}/tree/main/examples/research-tools`;
 export const SERVER = "https://tollbooth-server-production.up.railway.app";

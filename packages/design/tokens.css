@@ -1,0 +1,50 @@
+/*
+ * Tollbooth design tokens. The single source for colour and type.
+ *
+ * Consumed by the landing/docs site (via a generated copy in site/styles) and by
+ * the operator dashboard (inlined at build). Edit here; run `npm run sync` to
+ * propagate. CI fails if a copy drifts.
+ */
+:root {
+  --tb-font-primary: "Inter Display", ui-sans-serif, system-ui, sans-serif;
+  --tb-font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --tb-charcoal-900: #1a1a1a;
+  --tb-charcoal-800: #262626;
+  --tb-charcoal-700: #333333;
+
+  --tb-gray-100: #f9f9f9;
+  --tb-gray-200: #f4f4f4;
+  --tb-gray-300: #e9ebee;
+  --tb-gray-400: #d5d5d5;
+  --tb-gray-500: #bdbdbd;
+  --tb-gray-600: #878787;
+
+  /* Evidence, not hype: one restrained accent. */
+  --tb-brand: #0f8a7e;
+  --tb-brand-soft: #d9f1ee;
+  --tb-warn: #b45309;
+  --tb-warn-soft: #fffbeb;
+
+  --tb-divide: var(--tb-gray-300);
+  --tb-fg: var(--tb-charcoal-900);
+  --tb-fg-muted: var(--tb-gray-600);
+  --tb-bg: #ffffff;
+  --tb-bg-soft: var(--tb-gray-100);
+  --tb-line: #e5e5e5;
+
+  --tb-shadow:
+    0px 2px 3px -1px rgba(0, 0, 0, 0.1), 0px 1px 0px 0px rgba(25, 28, 33, 0.02),
+    0px 0px 0px 1px rgba(25, 28, 33, 0.08);
+}
+
+.dark {
+  --tb-divide: #262626;
+  --tb-fg: #f5f5f5;
+  --tb-fg-muted: #a3a3a3;
+  --tb-bg: #000000;
+  --tb-bg-soft: #171717;
+  --tb-line: #404040;
+  --tb-brand-soft: #042f2e;
+  --tb-warn-soft: #451a03;
+}

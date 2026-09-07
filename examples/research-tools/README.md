@@ -13,8 +13,9 @@ credit pack, settling to your own wallet. Copy it and change the tools.
 
 ## 1. Get it running (about three minutes)
 
+<!-- snippet:RUN (generated from site/content/snippets.ts) -->
 ```bash
-git clone https://github.com/Jagadeeshftw/tollbooth
+git clone ${REPO}
 cd tollbooth
 npm install
 npm run build
@@ -25,6 +26,7 @@ export MOOVE_API_KEY=mk_live_...
 
 node examples/research-tools/dist/stdio.js
 ```
+<!-- /snippet:RUN -->
 
 You should see `[research-tools] ready on stdio`. That is the whole server.
 
@@ -76,16 +78,18 @@ export const PRICES = [
 Change the tools. `paidTool` takes the same arguments as an ordinary
 `registerTool`, plus a sku and a per-call cost:
 
+<!-- snippet:TOOL (generated from site/content/snippets.ts) -->
 ```ts
 server.paidTool(
   'fetch_readable',
   'Fetch a web page and return its readable text.',
-  { sku: 'research', cost: 1 },      // an expensive tool can cost more
+  { sku: 'research', cost: 1 },   // an expensive tool can cost more
   { url: z.string() },
   { readOnlyHint: true },
-  async (args) => run(() => fetchReadable(String(args.url)))
+  async (args) => readable(String(args.url))
 );
 ```
+<!-- /snippet:TOOL -->
 
 Tollbooth adds the `tollboothToken` argument, gates the call, and hands your
 handler the arguments with the token already stripped. Unpaid calls never reach
@@ -101,7 +105,22 @@ docker run -p 8080:8080 \
   research-tools
 ```
 
-The server listens on `/mcp` (Streamable HTTP) with a `/health` endpoint.
+The server listens on `/mcp` (Streamable HTTP) with a `/health` endpoint. To point
+a client at the deployed instance:
+
+<!-- snippet:CLIENT (generated from site/content/snippets.ts) -->
+```json
+{
+  "mcpServers": {
+    "tollbooth-research": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "${SERVER}/mcp"]
+    }
+  }
+}
+```
+<!-- /snippet:CLIENT -->
+
 `railway.json` deploys the same Dockerfile.
 
 **Mount a volume at `/data`.** The SQLite database holds entitlements people

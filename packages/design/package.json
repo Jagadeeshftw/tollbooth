@@ -1,0 +1,8 @@
+{
+  "name": "@tollbooth/design",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Design tokens shared by the site and the operator dashboard.",
+  "license": "MIT",
+  "files": ["tokens.css"]
+}
