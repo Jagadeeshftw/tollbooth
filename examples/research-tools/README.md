@@ -142,6 +142,11 @@ somebody who bought a pack from spending it in seconds probing hosts.
 
 ## Things worth knowing
 
+- **A checkout URL identifies you.** Moove's read endpoint is public by design —
+  the payer has no account and no key — so anyone holding a link id can read
+  your wallet address, Moove handle and wallet provider. Fine to hand to the
+  person paying; not fine to paste into a public issue or a shared log. See
+  [what a link id reveals](../../README.md#what-a-link-id-reveals).
 - **A checkout link lives for an hour** and cannot be deactivated — Moove has
   no endpoint for it, so expiry is the only containment.
 - **A short settlement does not fail.** Within 0.5% it grants in full; below
