@@ -46,6 +46,12 @@ export interface ServerOptions {
   burst?: number;
 }
 
+/**
+ * Build the store, provider and rate limiter once.
+ *
+ * These are process-wide: a pool, a database and a token bucket. Only the
+ * McpServer is per-request, and that is just tool registration.
+ */
 export function createServer(options: ServerOptions) {
   const store =
     options.store ??
@@ -69,6 +75,7 @@ export function createServer(options: ServerOptions) {
     prices: PRICES,
   });
 
+  function buildServer() {
   const mcp = new McpServer(
     { name: 'research-tools', version: '0.1.0' },
     { capabilities: { tools: {} } }
@@ -120,6 +127,11 @@ export function createServer(options: ServerOptions) {
     async (args, extra) => run(extra, () => inspectDomain(String(args['domain'])))
   );
 
+  return server;
+  }
+
+  const server = buildServer();
+
   /**
    * Rate limit the caller, run the tool under a deadline, and turn a refusal
    * into a message the model can act on rather than an opaque failure.
@@ -145,5 +157,5 @@ export function createServer(options: ServerOptions) {
     }
   }
 
-  return { server, store, provider, limiter };
+  return { server, store, provider, limiter, buildServer };
 }

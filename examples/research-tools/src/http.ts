@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
  * Public entrypoint: Streamable HTTP, for deploying somewhere an agent can
- * reach. One transport per request keeps the server stateless, which is what
- * the newer protocol revisions assume anyway.
+ * reach. A single transport serves every request: the server is stateless,
+ * which is what the newer protocol revisions assume anyway.
  */
-import { randomUUID } from 'node:crypto';
 import { createServer as createHttpServer } from 'node:http';
 
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -38,7 +37,7 @@ if (store) {
   console.error('[research-tools] store: sqlite (set DATABASE_URL for Postgres)');
 }
 
-const { server, provider } = createServer({
+const { provider, buildServer } = createServer({
   apiKey,
   ...(process.env['MOOVE_API_BASE_URL'] ? { baseUrl: process.env['MOOVE_API_BASE_URL'] } : {}),
   ...(store ? { store } : { databasePath: process.env['TOLLBOOTH_DB'] ?? '/data/tollbooth.sqlite' }),
@@ -61,11 +60,21 @@ const http = createHttpServer(async (req, res) => {
     return;
   }
   try {
+    // A fresh McpServer and transport per request. This is the SDK's stateless
+    // pattern: an McpServer cannot be re-connected to a second transport, and
+    // a shared transport with no session id has nothing to correlate a
+    // follow-up request against. Only tool registration is repeated — the
+    // store, provider and rate limiter are process-wide singletons.
+    const mcp = buildServer();
     const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
     });
-    res.on('close', () => void transport.close());
-    await server.connect(transport);
+    res.on('close', () => {
+      void transport.close();
+      void mcp.close?.();
+    });
+    await mcp.connect(transport);
     await transport.handleRequest(req, res);
   } catch (error) {
     console.error('[research-tools] request failed', error);
