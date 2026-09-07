@@ -262,6 +262,14 @@ export function runStoreConformance(harness: StoreHarness): void {
           sku: 'search',
         });
         const granted = results.filter((r) => r.ok).length;
+        const broken = results.filter(
+          (r) => !r.ok && (r as { reason?: string }).reason !== 'insufficient_credits'
+        );
+        assert.deepEqual(
+          broken,
+          [],
+          `no worker may crash; got ${JSON.stringify(broken.slice(0, 3))}`
+        );
         assert.equal(
           granted,
           CREDITS,

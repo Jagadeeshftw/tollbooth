@@ -15,12 +15,17 @@ while (Date.now() < startAt) {
   /* deliberate busy-wait: sleeping would blur the collision */
 }
 
-const store = new SqliteEntitlementStore({ path: dbPath });
+// Construction is inside the try on purpose: opening the database runs the
+// schema DDL, and twelve processes doing that at once can fail. A worker that
+// dies here writes nothing, and the harness then has an empty string to parse
+// rather than a reason.
+let store;
 try {
+  store = new SqliteEntitlementStore({ path: dbPath });
   const result = await store.consume(subject, sku, 1);
   process.stdout.write(JSON.stringify(result));
 } catch (error) {
   process.stdout.write(JSON.stringify({ ok: false, reason: 'threw', error: String(error) }));
 } finally {
-  await store.close();
+  await store?.close();
 }

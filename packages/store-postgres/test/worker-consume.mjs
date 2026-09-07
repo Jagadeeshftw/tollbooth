@@ -9,11 +9,12 @@ while (Date.now() < startAt) {
   /* busy-wait so every worker collides on the same instant */
 }
 
-const store = new PostgresEntitlementStore({ connectionString, migrate: false });
+let store;
 try {
+  store = new PostgresEntitlementStore({ connectionString, migrate: false });
   process.stdout.write(JSON.stringify(await store.consume(subject, sku, 1)));
 } catch (error) {
   process.stdout.write(JSON.stringify({ ok: false, reason: 'threw', error: String(error) }));
 } finally {
-  await store.close();
+  await store?.close();
 }

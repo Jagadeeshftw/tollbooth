@@ -122,7 +122,27 @@ export class SqliteEntitlementStore implements EntitlementStore {
     this.#db.pragma('journal_mode = WAL');
     this.#db.pragma('foreign_keys = ON');
     this.#db.pragma(`busy_timeout = ${options.busyTimeoutMs ?? 5000}`);
-    this.#db.exec(SCHEMA);
+    // Opening the database runs the schema DDL, and several processes booting
+    // together all run it at once. Under WAL that can come back SQLITE_BUSY
+    // even with a busy_timeout set, because DDL needs an exclusive lock the
+    // timeout does not always cover. Retry briefly rather than failing a boot.
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        this.#db.exec(SCHEMA);
+        lastError = undefined;
+        break;
+      } catch (error) {
+        lastError = error;
+        const code = (error as { code?: string }).code ?? '';
+        if (!code.startsWith('SQLITE_BUSY') && !code.startsWith('SQLITE_LOCKED')) throw error;
+        const until = Date.now() + 25 * (attempt + 1);
+        while (Date.now() < until) {
+          /* brief synchronous pause: better-sqlite3 has no async path here */
+        }
+      }
+    }
+    if (lastError) throw lastError;
   }
 
   async consume(subject: Subject, sku: Sku, cost = 1): Promise<ConsumeResult> {
