@@ -8,22 +8,39 @@
  * Needs RAILWAY_TOKEN in the environment. Prints a verdict, exits non-zero if
  * the retry did not happen.
  */
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 
 const RW =
   process.env.RAILWAY_BIN ??
   '/Users/jagadeesh/.nvm/versions/node/v24.11.1/lib/node_modules/@railway/cli/bin/railway';
 const SERVICE = process.env.RAILWAY_SERVICE ?? 'tollbooth-server';
 
+// Capture both streams: without a TTY the CLI does not reliably put log lines
+// on stdout, and reading only stdout silently finds nothing.
 let raw = '';
 try {
-  raw = execFileSync(RW, ['logs', '--service', SERVICE], {
+  const out = execFileSync(RW, ['logs', '--service', SERVICE], {
     encoding: 'utf8',
-    maxBuffer: 32 * 1024 * 1024,
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
+  raw = out ?? '';
+  if (!raw.includes('[tollbooth]')) {
+    const both = spawnSync(RW, ['logs', '--service', SERVICE], {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    raw = `${both.stdout ?? ''}\n${both.stderr ?? ''}`;
+  }
 } catch (e) {
-  console.error('Could not read Railway logs. Is RAILWAY_TOKEN set?\n', String(e.message).slice(0, 200));
-  process.exit(2);
+  raw = `${e.stdout ?? ''}\n${e.stderr ?? ''}`;
+  if (!raw.includes('[tollbooth]')) {
+    console.error(
+      'Could not read Railway logs. Is RAILWAY_TOKEN set?\n',
+      String(e.message ?? '').slice(0, 200)
+    );
+    process.exit(2);
+  }
 }
 
 const calls = [];

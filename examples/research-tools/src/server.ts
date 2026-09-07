@@ -17,6 +17,17 @@ import { ToolError, extractTables, fetchReadable, inspectDomain } from './tools.
  * costs them far more than the money does.
  */
 export const PRICES = [
+  // A deliberately tiny pack, used to exercise a real settlement end to end.
+  // allowBelowMinimum is on because the $5 floor exists for the payer's sake
+  // (gas and interruption cost), and this one is not meant to be economic.
+  definePrice({
+    sku: 'research-trial',
+    unit: 'credit_pack',
+    amount: '1.00',
+    credits: 25,
+    label: 'Research tools — trial, 25 credits',
+    allowBelowMinimum: true,
+  }),
   definePrice({
     sku: 'research',
     unit: 'credit_pack',
@@ -107,7 +118,7 @@ export function createServer(options: ServerOptions) {
     'fetch_readable',
     'Fetch a web page and return its readable text with navigation, scripts and ' +
       'markup stripped. Use this instead of guessing what a page says.',
-    { sku: 'research', cost: 1 },
+    { sku: 'research-trial', cost: 1 },
     { url: z.string().describe('Absolute http(s) URL of the page to read.') },
     { readOnlyHint: true, openWorldHint: true },
     async (args, extra) => run(extra, () => fetchReadable(String(args['url'])))

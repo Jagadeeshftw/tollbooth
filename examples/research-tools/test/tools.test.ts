@@ -46,13 +46,20 @@ describe('URL guard', () => {
 });
 
 describe('pricing', () => {
-  it('sells credit packs at or above the five dollar floor', () => {
+  it('sells credit packs, all but the trial at or above the five dollar floor', () => {
     assert.ok(PRICES.length >= 2);
     for (const price of PRICES) {
       assert.equal(price.unit, 'credit_pack');
-      assert.ok(Number(price.amount) >= 5, `${price.sku} is ${price.amount}`);
       assert.ok((price.credits ?? 0) > 0);
+      if (price.sku === 'research-trial') continue; // deliberately uneconomic
+      assert.ok(Number(price.amount) >= 5, `${price.sku} is ${price.amount}`);
     }
+  });
+
+  it('keeps exactly one sub-minimum pack, and only for trialling settlement', () => {
+    const cheap = PRICES.filter((p) => Number(p.amount) < 5);
+    assert.equal(cheap.length, 1, 'only the trial pack may sit below the floor');
+    assert.equal(cheap[0]?.sku, 'research-trial');
   });
 
   it('prices a credit well under a cent so a pack lasts a session', () => {
