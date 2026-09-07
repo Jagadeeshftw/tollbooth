@@ -1,0 +1,19 @@
+{
+  "name": "@tollbooth/store-postgres",
+  "version": "0.0.1",
+  "description": "Durable Postgres entitlement store for Tollbooth, built for Neon.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": { "@tollbooth/core": "0.0.1", "pg": "^8.13.1" },
+  "devDependencies": { "@tollbooth/store-conformance": "0.0.1", "@types/pg": "^8.11.10" }
+}
