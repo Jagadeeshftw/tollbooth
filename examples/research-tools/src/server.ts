@@ -84,6 +84,12 @@ export function createServer(options: ServerOptions) {
   const server = withPaywall(mcp, {
     provider,
     store,
+    // One structured line per paid call. This is what the Desktop check reads
+    // to answer "was it called twice" and "did the same handle come back"
+    // without anyone having to read a transcript.
+    onCall: (event) => {
+      console.error('[tollbooth] ' + JSON.stringify({ evt: 'call', ...event }));
+    },
     onSettlement: (outcome) => {
       // Worth logging loudly: `underpaid` means somebody paid and got nothing,
       // and only a human can resolve it.

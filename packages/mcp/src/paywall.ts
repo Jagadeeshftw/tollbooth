@@ -38,6 +38,21 @@ export interface PaywallConfig {
   allow?: readonly string[];
   /** Called on every settlement observation. Use it to log or alert. */
   onSettlement?: (outcome: SettlementOutcome) => void;
+  /**
+   * Called on every paid tool call, before and after the gate decides.
+   *
+   * Deliberately never carries the handle itself — a fingerprint is enough to
+   * tell whether the same handle came back, and a full handle in a log is a
+   * bearer credential in a log.
+   */
+  onCall?: (event: {
+    tool: string;
+    sku: Sku;
+    tokenPresented: boolean;
+    tokenFingerprint: string | null;
+    tokenRecognised: boolean;
+    outcome: 'challenged' | 'authorised';
+  }) => void;
   now?: () => number;
 }
 
@@ -160,6 +175,11 @@ export function withPaywall<S extends RegisterableServer>(
   return augmented;
 }
 
+/** First and last few characters. Enough to correlate, useless if leaked. */
+function fingerprintOf(token: string): string {
+  return token.length <= 14 ? token : `${token.slice(0, 9)}..${token.slice(-4)}`;
+}
+
 function normalisePricing(p: Sku | PaidToolPricing): { sku: Sku; cost: number } {
   if (typeof p === 'string') return { sku: p, cost: 1 };
   return { sku: p.sku, cost: p.cost ?? 1 };
@@ -190,24 +210,49 @@ export class Paywall {
     // No handle: this is a first call. Mint one and open a charge.
     if (!args.token) {
       const record = await provider.issueSubject(args.principal ?? null);
-      return { ok: false, result: await this.#challenge(record.subject, args) };
+      const result = await this.#challenge(record.subject, args);
+      this.#report(args, false, null, false, 'challenged');
+      return { ok: false, result };
     }
 
+    const fingerprint = fingerprintOf(args.token);
     const record = await this.#loadSubject(args.token, args.principal ?? null);
     if (!record) {
       // Unknown or lapsed handle. Start again rather than failing hard: the
       // caller is trying to pay, and a dead handle is not their fault.
       const fresh = await provider.issueSubject(args.principal ?? null);
-      return { ok: false, result: await this.#challenge(fresh.subject, args) };
+      const result = await this.#challenge(fresh.subject, args);
+      this.#report(args, true, fingerprint, false, 'challenged');
+      return { ok: false, result };
     }
 
     const spent = await this.#spend(record.subject, args);
     if (spent) {
       await provider.touchSubject(record.subject);
+      this.#report(args, true, fingerprint, true, 'authorised');
       return { ok: true, subject: record.subject };
     }
 
-    return { ok: false, result: await this.#challenge(record.subject, args) };
+    const result = await this.#challenge(record.subject, args);
+    this.#report(args, true, fingerprint, true, 'challenged');
+    return { ok: false, result };
+  }
+
+  #report(
+    args: { sku: Sku; toolName: string },
+    tokenPresented: boolean,
+    tokenFingerprint: string | null,
+    tokenRecognised: boolean,
+    outcome: 'challenged' | 'authorised'
+  ): void {
+    this.#config.onCall?.({
+      tool: args.toolName,
+      sku: args.sku,
+      tokenPresented,
+      tokenFingerprint,
+      tokenRecognised,
+      outcome,
+    });
   }
 
   /**
