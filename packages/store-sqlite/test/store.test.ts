@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
 import { promisify } from 'node:util';
 
-import { definePrice, entitlementFromPrice } from '@tollbooth/core';
+import { definePrice, entitlementFromPrice, issueSubjectRecord, slideSubject } from '@tollbooth/core';
 import type { Charge, Entitlement } from '@tollbooth/core';
 
 import { SqliteEntitlementStore } from '../src/index.js';
@@ -149,6 +149,24 @@ describe('SqliteEntitlementStore behaviour', () => {
     // A restart must not hand out a second claim for a payment already granted.
     const second = new SqliteEntitlementStore({ path });
     assert.equal(await second.claimSettlement('n1'), false);
+    await second.close();
+  });
+
+  it('persists subject handles and their sliding window across a restart', async () => {
+    const path = tempDb();
+    const first = new SqliteEntitlementStore({ path });
+    const record = issueSubjectRecord({ subject: 'tb_s_x', now: 1000, boundTo: 'user-1' });
+    await first.putSubject(record);
+    await first.putSubject(slideSubject(record, 5000));
+    await first.close();
+
+    const second = new SqliteEntitlementStore({ path });
+    const got = await second.getSubject('tb_s_x');
+    assert.equal(got?.createdAt, 1000, 'creation time is not rewritten by a slide');
+    assert.equal(got?.lastSeenAt, 5000);
+    assert.equal(got?.expiresAt, 5000 + 30 * 24 * 60 * 60 * 1000);
+    assert.equal(got?.boundTo, 'user-1');
+    assert.equal(await second.getSubject('tb_s_never'), undefined);
     await second.close();
   });
 

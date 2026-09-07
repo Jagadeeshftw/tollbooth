@@ -1,5 +1,6 @@
 import { isUsable } from './pricing.js';
 import type { EntitlementStore } from './store.js';
+import type { SubjectRecord } from './subjects.js';
 import type { Charge, ConsumeResult, Entitlement, Sku, Subject } from './types.js';
 
 export interface MemoryStoreOptions {
@@ -30,6 +31,7 @@ export class MemoryEntitlementStore implements EntitlementStore {
   readonly #entitlements = new Map<string, Entitlement>();
   readonly #charges = new Map<string, Charge>();
   readonly #claimed = new Set<string>();
+  readonly #subjects = new Map<string, SubjectRecord>();
   readonly #now: () => number;
   readonly #beforeSwap: (() => Promise<void>) | undefined;
 
@@ -128,6 +130,14 @@ export class MemoryEntitlementStore implements EntitlementStore {
     return [...this.#entitlements.values()].filter((e) => e.subject === subject);
   }
 
+  async putSubject(record: SubjectRecord): Promise<void> {
+    this.#subjects.set(record.subject, record);
+  }
+
+  async getSubject(subject: Subject): Promise<SubjectRecord | undefined> {
+    return this.#subjects.get(subject);
+  }
+
   async sweepExpired(now: number): Promise<number> {
     let swept = 0;
     for (const charge of this.#charges.values()) {
@@ -143,6 +153,7 @@ export class MemoryEntitlementStore implements EntitlementStore {
     this.#entitlements.clear();
     this.#charges.clear();
     this.#claimed.clear();
+    this.#subjects.clear();
   }
 }
 

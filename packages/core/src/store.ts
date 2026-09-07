@@ -1,3 +1,4 @@
+import type { SubjectRecord } from './subjects.js';
 import type { Charge, ChargeStatus, ConsumeResult, Entitlement, Sku, Subject } from './types.js';
 
 /**
@@ -55,10 +56,18 @@ export interface EntitlementStore {
 
   listEntitlements(subject: Subject): Promise<Entitlement[]>;
 
+  /**
+   * Persist a subject handle and its sliding expiry. Called on issue and on
+   * every successful use, so an active caller never loses paid credits.
+   */
+  putSubject(record: SubjectRecord): Promise<void>;
+
+  getSubject(subject: Subject): Promise<SubjectRecord | undefined>;
+
   /** Mark expired pending charges abandoned. Returns how many were swept. */
   sweepExpired(now: number): Promise<number>;
 
   close(): Promise<void>;
 }
 
-export type { Charge, ChargeStatus, ConsumeResult, Entitlement };
+export type { Charge, ChargeStatus, ConsumeResult, Entitlement, SubjectRecord };

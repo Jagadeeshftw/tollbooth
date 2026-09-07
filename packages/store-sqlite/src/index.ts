@@ -8,6 +8,7 @@ import type {
   EntitlementStore,
   Sku,
   Subject,
+  SubjectRecord,
 } from '@tollbooth/core';
 
 export interface SqliteStoreOptions {
@@ -28,6 +29,14 @@ interface EntitlementRow {
   charge_id: string;
   created_at: number;
   version: number;
+}
+
+interface SubjectRow {
+  subject: string;
+  created_at: number;
+  last_seen_at: number;
+  expires_at: number;
+  bound_to: string | null;
 }
 
 interface ChargeRow {
@@ -77,6 +86,14 @@ CREATE TABLE IF NOT EXISTS charges (
   poll_count      INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_charges_status ON charges (status, created_at);
+
+CREATE TABLE IF NOT EXISTS subjects (
+  subject     TEXT PRIMARY KEY,
+  created_at  INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL,
+  bound_to    TEXT
+);
 
 -- One row per settled payment, ever. The primary key is the exactly-once guard.
 CREATE TABLE IF NOT EXISTS settlement_claims (
@@ -279,6 +296,39 @@ export class SqliteEntitlementStore implements EntitlementStore {
       .prepare<[string], EntitlementRow>('SELECT * FROM entitlements WHERE subject = ?')
       .all(subject)
       .map(toEntitlement);
+  }
+
+  async putSubject(record: SubjectRecord): Promise<void> {
+    this.#db
+      .prepare(
+        `INSERT INTO subjects (subject, created_at, last_seen_at, expires_at, bound_to)
+         VALUES (@subject, @createdAt, @lastSeenAt, @expiresAt, @boundTo)
+         ON CONFLICT(subject) DO UPDATE SET
+           last_seen_at = excluded.last_seen_at,
+           expires_at   = excluded.expires_at,
+           bound_to     = excluded.bound_to`
+      )
+      .run({
+        subject: record.subject,
+        createdAt: record.createdAt,
+        lastSeenAt: record.lastSeenAt,
+        expiresAt: record.expiresAt,
+        boundTo: record.boundTo,
+      });
+  }
+
+  async getSubject(subject: Subject): Promise<SubjectRecord | undefined> {
+    const row = this.#db
+      .prepare<[string], SubjectRow>('SELECT * FROM subjects WHERE subject = ?')
+      .get(subject);
+    if (!row) return undefined;
+    return {
+      subject: row.subject,
+      createdAt: row.created_at,
+      lastSeenAt: row.last_seen_at,
+      expiresAt: row.expires_at,
+      boundTo: row.bound_to,
+    };
   }
 
   async sweepExpired(now: number): Promise<number> {
