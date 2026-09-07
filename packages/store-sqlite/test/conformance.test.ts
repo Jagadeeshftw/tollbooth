@@ -46,10 +46,18 @@ runStoreConformance({
       Array.from({ length: count }, () =>
         execFileAsync(process.execPath, [worker, path, subject, sku, String(startAt)])
           .then((r) => r.stdout)
-          .catch((e: { stdout?: string }) => e.stdout ?? '{"ok":false,"reason":"spawn-failed"}')
+          .catch(
+            (e: { stdout?: string; stderr?: string }) =>
+              e.stdout ||
+              JSON.stringify({ ok: false, reason: 'spawn-failed', error: e.stderr ?? '' })
+          )
       )
     );
-    return outputs.map((o) => JSON.parse(o) as { ok: boolean });
+    // A worker that wrote nothing crashed before it could report. Say so,
+    // rather than dying in JSON.parse and hiding the real failure.
+    return outputs.map((o) =>
+      o.trim() === '' ? { ok: false, reason: 'no-output' } : (JSON.parse(o) as { ok: boolean })
+    );
   },
   async cleanup() {
     for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
