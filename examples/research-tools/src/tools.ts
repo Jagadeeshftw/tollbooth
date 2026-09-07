@@ -1,6 +1,8 @@
 import { Resolver } from 'node:dns/promises';
 import { connect } from 'node:tls';
 
+import { BlockedAddressError, assertFetchableUrl, resolvePublicHost, safeFetch } from './net.js';
+
 /**
  * The three tools this server sells.
  *
@@ -10,19 +12,37 @@ import { connect } from 'node:tls';
  */
 
 const USER_AGENT = 'tollbooth-research-tools/0.1 (+https://github.com/Jagadeeshftw/tollbooth)';
-const FETCH_TIMEOUT_MS = 15_000;
-const MAX_BYTES = 3_000_000;
+const FETCH_TIMEOUT_MS = 10_000;
+const MAX_BYTES = 2_000_000;
 
 export class ToolError extends Error {
   override readonly name = 'ToolError';
 }
 
 /**
- * Refuse anything that is not a public http(s) URL.
+ * Fetch a page, with every address checked and every redirect re-validated.
  *
- * This server takes a URL from a model and fetches it, which is a
- * server-side request forgery primitive if left open. Loopback, link-local and
- * private ranges are rejected before the request is made.
+ * All the guarding lives in `net.ts`. This only translates its refusals into a
+ * message a model can act on.
+ */
+async function fetchPage(rawUrl: string): Promise<{ url: string; body: string }> {
+  try {
+    const { url, body } = await safeFetch(rawUrl, {
+      timeoutMs: FETCH_TIMEOUT_MS,
+      maxBytes: MAX_BYTES,
+      userAgent: USER_AGENT,
+    });
+    return { url, body };
+  } catch (error) {
+    if (error instanceof BlockedAddressError) throw new ToolError(error.message);
+    throw error;
+  }
+}
+
+/**
+ * Synchronous scheme and port check. Kept because it is a cheap first pass, but
+ * it is *not* sufficient on its own: only `assertFetchableUrl` resolves the
+ * hostname, and only `safeFetch` re-checks redirect hops.
  */
 export function assertPublicHttpUrl(raw: string): URL {
   let url: URL;
@@ -34,7 +54,6 @@ export function assertPublicHttpUrl(raw: string): URL {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new ToolError(`Only http and https URLs are supported, got ${url.protocol}`);
   }
-  // URL keeps the brackets on an IPv6 literal, so [::1] is not '::1'.
   const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   if (
     host === 'localhost' ||
@@ -44,8 +63,6 @@ export function assertPublicHttpUrl(raw: string): URL {
     host.startsWith('fe80:') ||
     host.startsWith('fc') ||
     host.startsWith('fd') ||
-    // Any IPv4-mapped IPv6 address. Node normalises ::ffff:127.0.0.1 to the
-    // hex form ::ffff:7f00:1, so match the prefix rather than the dotted quad.
     host.startsWith('::ffff:') ||
     host.endsWith('.localhost') ||
     host.endsWith('.internal') ||
@@ -60,29 +77,7 @@ export function assertPublicHttpUrl(raw: string): URL {
   return url;
 }
 
-async function fetchText(url: URL): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const response = await fetch(url, {
-      headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml' },
-      signal: controller.signal,
-      redirect: 'follow',
-    });
-    if (!response.ok) throw new ToolError(`${url.host} returned HTTP ${response.status}`);
-    const body = await response.text();
-    if (body.length > MAX_BYTES) throw new ToolError(`${url.host} returned more than 3MB`);
-    return body;
-  } catch (error) {
-    if (error instanceof ToolError) throw error;
-    if ((error as Error)?.name === 'AbortError') {
-      throw new ToolError(`${url.host} did not respond within ${FETCH_TIMEOUT_MS / 1000}s`);
-    }
-    throw new ToolError(`Could not fetch ${url.host}: ${(error as Error).message}`);
-  } finally {
-    clearTimeout(timer);
-  }
-}
+export { assertFetchableUrl };
 
 // ---------------------------------------------------------------- readable
 
@@ -101,8 +96,7 @@ export async function fetchReadable(rawUrl: string): Promise<{
   text: string;
   characters: number;
 }> {
-  const url = assertPublicHttpUrl(rawUrl);
-  const html = await fetchText(url);
+  const { url, body: html } = await fetchPage(rawUrl);
 
   const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]?.trim() ?? null;
 
@@ -127,7 +121,7 @@ export async function fetchReadable(rawUrl: string): Promise<{
     .join('\n')
     .trim();
 
-  return { url: url.toString(), title: decodeEntities(title), text, characters: text.length };
+  return { url, title: decodeEntities(title), text, characters: text.length };
 }
 
 function decodeEntities(s: string | null): string | null {
@@ -154,8 +148,7 @@ export async function extractTables(rawUrl: string): Promise<{
   tableCount: number;
   tables: { index: number; caption: string | null; headers: string[]; rows: string[][] }[];
 }> {
-  const url = assertPublicHttpUrl(rawUrl);
-  const html = await fetchText(url);
+  const { url, body: html } = await fetchPage(rawUrl);
 
   const tables: { index: number; caption: string | null; headers: string[]; rows: string[][] }[] = [];
   const tableRe = /<table[\s\S]*?<\/table>/gi;
@@ -188,7 +181,7 @@ export async function extractTables(rawUrl: string): Promise<{
     tables.push({ index: index++, caption, headers, rows });
   }
 
-  return { url: url.toString(), tableCount: tables.length, tables };
+  return { url, tableCount: tables.length, tables };
 }
 
 function cellText(raw: string): string {
@@ -216,6 +209,15 @@ export async function inspectDomain(domain: string): Promise<Record<string, unkn
   const host = domain.trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0] ?? '';
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(host)) {
     throw new ToolError(`Not a valid domain name: ${domain}`);
+  }
+
+  // Without this, a paid handle turns the server into a probe for internal
+  // hosts: inspect_domain opens a TLS connection to whatever it is given.
+  try {
+    await resolvePublicHost(host);
+  } catch (error) {
+    if (error instanceof BlockedAddressError) throw new ToolError(error.message);
+    throw error;
   }
 
   const resolver = new Resolver({ timeout: 5000, tries: 2 });

@@ -40,6 +40,7 @@ export {
 export { DEFAULT_ARGUMENT_NAME, Paywall, withPaywall } from './paywall.js';
 export type {
   PaidToolPricing,
+  TollboothCallContext,
   PaywallConfig,
   PaywalledServer,
   RegisterableServer,

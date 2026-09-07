@@ -5,6 +5,7 @@ import type {
   PaymentProvider,
   SettlementOutcome,
   Sku,
+  Subject,
   SubjectRecord,
 } from '@tollbooth/core';
 import { z } from 'zod';
@@ -14,6 +15,13 @@ import { composeChallenge } from './challenge.js';
 import { DEFAULT_COPY } from './copy.js';
 import { negotiate } from './negotiate.js';
 import type { ClientProfile } from './negotiate.js';
+
+/** What Tollbooth adds to a paid tool's `extra`. */
+export interface TollboothCallContext {
+  readonly subject: Subject;
+  readonly sku: Sku;
+  readonly cost: number;
+}
 
 /** The tool argument the agent carries the handle back in. */
 export const DEFAULT_ARGUMENT_NAME = 'tollboothToken';
@@ -137,7 +145,14 @@ export function withPaywall<S extends RegisterableServer>(
         });
 
         if (!decision.ok) return decision.result;
-        return handler(rest, extra);
+
+        // Hand the resolved handle to the tool. A paid server usually needs it:
+        // credits stop free use, but only a per-subject ceiling stops somebody
+        // who paid from spending a whole pack in seconds.
+        const withSubject = Object.assign(Object.create(Object.getPrototypeOf(extra ?? {})), extra, {
+          tollbooth: { subject: decision.subject, sku, cost },
+        });
+        return handler(rest, withSubject);
       }
     );
   };
@@ -169,7 +184,7 @@ export class Paywall {
     token: string | undefined;
     client?: ClientProfile;
     principal?: string | null;
-  }): Promise<{ ok: true } | { ok: false; result: ChallengeResult }> {
+  }): Promise<{ ok: true; subject: Subject } | { ok: false; result: ChallengeResult }> {
     const { provider } = this.#config;
 
     // No handle: this is a first call. Mint one and open a charge.
@@ -189,7 +204,7 @@ export class Paywall {
     const spent = await this.#spend(record.subject, args);
     if (spent) {
       await provider.touchSubject(record.subject);
-      return { ok: true };
+      return { ok: true, subject: record.subject };
     }
 
     return { ok: false, result: await this.#challenge(record.subject, args) };

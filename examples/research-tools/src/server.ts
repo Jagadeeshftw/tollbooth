@@ -1,10 +1,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { definePrice } from '@tollbooth/core';
+import type { EntitlementStore } from '@tollbooth/core';
 import { withPaywall } from '@tollbooth/mcp';
 import { MooveClient, MooveProvider } from '@tollbooth/moove';
 import { SqliteEntitlementStore } from '@tollbooth/store-sqlite';
 import { z } from 'zod';
 
+import { PerSubjectRateLimiter, RateLimitedError, TimeoutError, withDeadline } from './limits.js';
 import { ToolError, extractTables, fetchReadable, inspectDomain } from './tools.js';
 
 /**
@@ -31,15 +33,31 @@ export const PRICES = [
   }),
 ];
 
+/** Hard ceiling on any one tool call, covering DNS, TLS, fetch and parsing. */
+const TOOL_DEADLINE_MS = 20_000;
+
 export interface ServerOptions {
   apiKey: string;
   baseUrl?: string;
   databasePath?: string;
+  store?: EntitlementStore;
+  /** Sustained calls per second per payment handle. */
+  ratePerSecond?: number;
+  burst?: number;
 }
 
 export function createServer(options: ServerOptions) {
-  const store = new SqliteEntitlementStore({
-    path: options.databasePath ?? process.env['TOLLBOOTH_DB'] ?? './tollbooth.sqlite',
+  const store =
+    options.store ??
+    new SqliteEntitlementStore({
+      path: options.databasePath ?? process.env['TOLLBOOTH_DB'] ?? './tollbooth.sqlite',
+    });
+
+  // Credits stop free use. They do not stop somebody who bought a pack from
+  // spending it in seconds probing hosts, so the paid path has its own ceiling.
+  const limiter = new PerSubjectRateLimiter({
+    ratePerSecond: options.ratePerSecond ?? 2,
+    burst: options.burst ?? 10,
   });
 
   const provider = new MooveProvider({
@@ -79,7 +97,7 @@ export function createServer(options: ServerOptions) {
     { sku: 'research', cost: 1 },
     { url: z.string().describe('Absolute http(s) URL of the page to read.') },
     { readOnlyHint: true, openWorldHint: true },
-    async (args) => run(() => fetchReadable(String(args['url'])))
+    async (args, extra) => run(extra, () => fetchReadable(String(args['url'])))
   );
 
   server.paidTool(
@@ -89,7 +107,7 @@ export function createServer(options: ServerOptions) {
     { sku: 'research', cost: 2 },
     { url: z.string().describe('Absolute http(s) URL of the page containing tables.') },
     { readOnlyHint: true, openWorldHint: true },
-    async (args) => run(() => extractTables(String(args['url'])))
+    async (args, extra) => run(extra, () => extractTables(String(args['url'])))
   );
 
   server.paidTool(
@@ -99,24 +117,33 @@ export function createServer(options: ServerOptions) {
     { sku: 'research', cost: 1 },
     { domain: z.string().describe('Domain name, e.g. example.org') },
     { readOnlyHint: true, openWorldHint: true },
-    async (args) => run(() => inspectDomain(String(args['domain'])))
+    async (args, extra) => run(extra, () => inspectDomain(String(args['domain'])))
   );
 
-  return { server, store, provider };
-}
-
-/** Turn a tool result into MCP content, and a ToolError into a clean message. */
-async function run<T>(fn: () => Promise<T>) {
-  try {
-    const result = await fn();
-    return {
-      content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
-      structuredContent: result as Record<string, unknown>,
-    };
-  } catch (error) {
-    if (error instanceof ToolError) {
-      return { isError: true, content: [{ type: 'text' as const, text: error.message }] };
+  /**
+   * Rate limit the caller, run the tool under a deadline, and turn a refusal
+   * into a message the model can act on rather than an opaque failure.
+   */
+  async function run<T>(extra: unknown, fn: () => Promise<T>) {
+    const subject = (extra as { tollbooth?: { subject?: string } })?.tollbooth?.subject;
+    try {
+      if (subject) limiter.check(subject);
+      const result = await withDeadline(TOOL_DEADLINE_MS, fn);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+        structuredContent: result as Record<string, unknown>,
+      };
+    } catch (error) {
+      if (
+        error instanceof ToolError ||
+        error instanceof RateLimitedError ||
+        error instanceof TimeoutError
+      ) {
+        return { isError: true, content: [{ type: 'text' as const, text: error.message }] };
+      }
+      throw error;
     }
-    throw error;
   }
+
+  return { server, store, provider, limiter };
 }

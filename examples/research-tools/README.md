@@ -116,10 +116,29 @@ them, and there is no refund path.
 | `extract_tables` | 2 | Returns every HTML table on a page as structured headers and rows |
 | `inspect_domain` | 1 | DNS records (A, AAAA, MX, NS, TXT, CNAME) plus the live TLS certificate and its expiry |
 
-All three take a URL or domain from a model and go to the network, so the URL
-guard in `src/tools.ts` refuses loopback, link-local, private ranges and
-IPv4-mapped IPv6 before any request is made. If you add a tool that fetches,
-use `assertPublicHttpUrl`.
+All three take a hostname from a model and connect to it, which is a
+server-side request forgery primitive if left open. `src/net.ts` holds the
+guards:
+
+- **Addresses, not names.** The hostname is resolved and every answer must be
+  public. A public name that resolves to `127.0.0.1` is refused — checking the
+  string alone stops nothing cleverer than typing `localhost`.
+- **Every redirect hop is re-validated.** `redirect: 'manual'`, because the
+  built-in follower will happily walk from a public URL to link-local metadata
+  and only the first hop was ever checked.
+- **Ports are restricted** to 80, 443, 8080 and 8443, so a paid handle cannot
+  be used as a connectivity oracle for SSH or a database.
+- **Bodies are capped while streaming**, not after buffering, so a response
+  that lies about its length cannot be read in full first.
+
+`inspect_domain` runs the same address check before it opens a TLS connection.
+
+If you add a tool that reaches the network, use `assertFetchableUrl` or
+`safeFetch` — not the plain string check.
+
+There is also a **per-handle rate limit** (2/s sustained, burst 10) and a
+**20-second deadline** on every call. Credits stop free use; they do not stop
+somebody who bought a pack from spending it in seconds probing hosts.
 
 ## Things worth knowing
 
