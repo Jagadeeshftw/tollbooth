@@ -43,7 +43,35 @@ const { provider, buildServer } = createServer({
   ...(store ? { store } : { databasePath: process.env['TOLLBOOTH_DB'] ?? '/data/tollbooth.sqlite' }),
 });
 
+/** Where a person landing on the bare URL should be sent. */
+const LANDING_URL = process.env['TOLLBOOTH_LANDING_URL'] ?? 'https://tollbooth.0xo.in';
+const REPO_URL = 'https://github.com/Jagadeeshftw/tollbooth';
+
 const http = createHttpServer(async (req, res) => {
+  // The first thing anyone visiting the URL sees. A descriptor, not a page:
+  // the page lives at LANDING_URL, and an agent probing this host wants JSON.
+  if (req.url === '/' || req.url === '') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(
+      JSON.stringify(
+        {
+          name: 'tollbooth-research-tools',
+          description:
+            'A paid MCP server built with Tollbooth. Three research tools behind a ' +
+            'credit pack: an agent calls a tool, gets a payment challenge, a human pays, ' +
+            'the agent retries.',
+          mcp: { endpoint: '/mcp', transport: 'streamable-http', protocolVersion: '2025-11-25' },
+          health: '/health',
+          repo: REPO_URL,
+          landing: LANDING_URL,
+          tools: ['fetch_readable', 'extract_tables', 'inspect_domain'],
+        },
+        null,
+        2
+      )
+    );
+    return;
+  }
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(
