@@ -43,8 +43,11 @@ export {
 
 export {
   DEFAULT_CHARGE_TTL_MS,
+  MAX_DESCRIPTION_LENGTH,
+  MIN_CHARGE_TTL_MS,
   MooveProvider,
   NONCE_PREFIX,
+  buildChargeDescription,
 } from './provider.js';
 export type { MooveProviderOptions, SettlementOutcome } from './provider.js';
 

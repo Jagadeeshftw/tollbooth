@@ -1,11 +1,24 @@
 import {
-  decimalGte,
+  DEFAULT_SETTLEMENT_POLICY,
+  assertValidPolicy,
+  decideSettlement,
   entitlementFromPrice,
+  issueSubjectRecord,
   mintChargeId,
   mintEntitlementId,
   mintNonce,
+  mintSubject,
+  slideSubject,
 } from '@tollbooth/core';
-import type { Charge, EntitlementStore, Price, Sku, Subject } from '@tollbooth/core';
+import type {
+  Charge,
+  EntitlementStore,
+  Price,
+  SettlementPolicy,
+  Sku,
+  Subject,
+  SubjectRecord,
+} from '@tollbooth/core';
 
 import type { MooveClient, MoovePaymentLink } from './client.js';
 import { isTerminalStatus, shouldPoll } from './poller.js';
@@ -13,15 +26,22 @@ import { isTerminalStatus, shouldPoll } from './poller.js';
 /** Prefix on the Moove `description` field that binds a payment to a charge. */
 export const NONCE_PREFIX = 'tb_';
 
+/** Moove caps `description` at 500 characters. */
+export const MAX_DESCRIPTION_LENGTH = 500;
+
 /**
  * How long a checkout stays payable.
  *
- * Moove has no endpoint to deactivate a link, so `expirationDate` is the only
- * containment there is. Short is safer: an abandoned link that never expires is
- * a payment that can arrive months later against an entitlement nobody is
- * waiting for.
+ * An hour, because a human may have to bridge funds from another chain before
+ * they can pay, and fifteen minutes is not enough for that. Moove has no
+ * endpoint to deactivate a link, so this is still the only containment there
+ * is — long enough to be usable, short enough that an abandoned link does not
+ * accept money months later against an entitlement nobody is waiting for.
  */
-export const DEFAULT_CHARGE_TTL_MS = 15 * 60 * 1000;
+export const DEFAULT_CHARGE_TTL_MS = 60 * 60 * 1000;
+
+/** Below this, ordinary cross-chain payers cannot finish in time. */
+export const MIN_CHARGE_TTL_MS = 15 * 60 * 1000;
 
 export type SettlementOutcome =
   | { status: 'pending'; charge: Charge }
@@ -29,38 +49,76 @@ export type SettlementOutcome =
   | { status: 'already_granted'; charge: Charge }
   | { status: 'expired'; charge: Charge }
   /**
-   * Settled for less than asked. Moove's docs say a payment link debits the
-   * payer enough to deliver the full amount, so this should not happen — which
-   * is exactly why it is surfaced rather than absorbed. Not granted
-   * automatically; the charge stays pending so reconciliation keeps raising it.
+   * Settled short, but close enough or large enough to be worth something.
+   * A reduced entitlement was granted and the charge is closed: there is no
+   * refund path, so a payer who sent real money never ends up with nothing.
    */
-  | { status: 'underpaid'; charge: Charge; expected: string; received: string };
+  | {
+      status: 'partial';
+      charge: Charge;
+      entitlementId: string;
+      expected: string;
+      received: string;
+      receivedFraction: number;
+      credits: number | null;
+    }
+  /**
+   * Too little to be worth anything. Nothing granted, charge left pending so
+   * reconciliation keeps raising it for the tenant to resolve by hand.
+   */
+  | {
+      status: 'underpaid';
+      charge: Charge;
+      expected: string;
+      received: string;
+      receivedFraction: number;
+    };
 
 export interface MooveProviderOptions {
   client: MooveClient;
   store: EntitlementStore;
   /** Everything this server sells. Looked up by sku when granting. */
   prices: readonly Price[];
+  /** Defaults to {@link DEFAULT_CHARGE_TTL_MS}; must be at least {@link MIN_CHARGE_TTL_MS}. */
   chargeTtlMs?: number;
+  /** Defaults to {@link DEFAULT_SETTLEMENT_POLICY}. */
+  settlementPolicy?: SettlementPolicy;
+  /** Sliding lifetime of a subject handle. Defaults to the core default. */
+  subjectTtlMs?: number;
   now?: () => number;
 }
 
 /**
- * Ties the Moove API to the entitlement model: opens a charge, and settles one
- * exactly once when the money arrives.
+ * Ties the Moove API to the entitlement model: issues handles, opens charges,
+ * and settles one exactly once when the money arrives.
  */
 export class MooveProvider {
   readonly #client: MooveClient;
   readonly #store: EntitlementStore;
   readonly #prices: Map<Sku, Price>;
   readonly #chargeTtlMs: number;
+  readonly #policy: SettlementPolicy;
+  readonly #subjectTtlMs: number | undefined;
   readonly #now: () => number;
 
   constructor(options: MooveProviderOptions) {
     this.#client = options.client;
     this.#store = options.store;
     this.#prices = new Map(options.prices.map((p) => [p.sku, p]));
-    this.#chargeTtlMs = options.chargeTtlMs ?? DEFAULT_CHARGE_TTL_MS;
+
+    const ttl = options.chargeTtlMs ?? DEFAULT_CHARGE_TTL_MS;
+    if (!Number.isFinite(ttl) || ttl < MIN_CHARGE_TTL_MS) {
+      throw new RangeError(
+        `chargeTtlMs must be at least ${MIN_CHARGE_TTL_MS}ms (15 minutes); received ${ttl}. ` +
+          'A payer bridging from another chain needs longer than that, and there is no ' +
+          'way to reopen a link once it expires.'
+      );
+    }
+    this.#chargeTtlMs = ttl;
+
+    this.#policy = options.settlementPolicy ?? DEFAULT_SETTLEMENT_POLICY;
+    assertValidPolicy(this.#policy);
+    this.#subjectTtlMs = options.subjectTtlMs;
     this.#now = options.now ?? Date.now;
   }
 
@@ -68,15 +126,42 @@ export class MooveProvider {
     return this.#prices.get(sku);
   }
 
+  listPrices(): Price[] {
+    return [...this.#prices.values()];
+  }
+
+  /** Mint a fresh subject handle and persist its sliding window. */
+  async issueSubject(boundTo: string | null = null): Promise<SubjectRecord> {
+    const record = issueSubjectRecord({
+      subject: mintSubject(),
+      now: this.#now(),
+      ...(this.#subjectTtlMs !== undefined ? { ttlMs: this.#subjectTtlMs } : {}),
+      boundTo,
+    });
+    await this.#store.putSubject(record);
+    return record;
+  }
+
+  /** Push a handle's expiry forward. Called after every successful use. */
+  async touchSubject(subject: Subject): Promise<void> {
+    const record = await this.#store.getSubject(subject);
+    if (!record) return;
+    await this.#store.putSubject(slideSubject(record, this.#now(), this.#subjectTtlMs));
+  }
+
   /**
    * Create a checkout for one purchase.
    *
    * Always one link per charge with `maxUsage: 1`. Moove exposes nothing that
    * identifies a payer, so a link shared between two buyers would be
-   * unattributable by construction; one link per charge makes attribution a
-   * property of the design rather than a guess.
+   * unattributable by construction.
    */
-  async openCharge(args: { sku: Sku; subject: Subject }): Promise<{ charge: Charge; checkoutUrl: string }> {
+  async openCharge(args: {
+    sku: Sku;
+    subject: Subject;
+    /** Included in the description so the tenant can reconcile from the dashboard. */
+    toolName?: string;
+  }): Promise<{ charge: Charge; checkoutUrl: string }> {
     const price = this.#prices.get(args.sku);
     if (!price) throw new Error(`no price registered for sku ${JSON.stringify(args.sku)}`);
 
@@ -86,7 +171,12 @@ export class MooveProvider {
 
     const created = await this.#client.createPaymentLink({
       toAmount: price.amount,
-      description: `${NONCE_PREFIX}${nonce}`,
+      description: buildChargeDescription({
+        nonce,
+        sku: args.sku,
+        ...(args.toolName !== undefined ? { toolName: args.toolName } : {}),
+        label: price.label,
+      }),
       maxUsage: 1,
       expirationDate: new Date(expiresAt).toISOString(),
     });
@@ -113,10 +203,8 @@ export class MooveProvider {
 
   /**
    * Ask whether a charge has settled, and grant on the first observation that
-   * it has.
-   *
-   * Safe to call from the agent's retry path and from a background reconciler
-   * at the same time: `claimSettlement` lets exactly one of them grant.
+   * it has. Safe to call from the agent's retry path and a background
+   * reconciler at once: `claimSettlement` lets exactly one of them grant.
    */
   async settleCharge(nonce: string, options: { force?: boolean } = {}): Promise<SettlementOutcome> {
     const charge = await this.#store.getCharge(nonce);
@@ -131,18 +219,20 @@ export class MooveProvider {
       return { status: 'expired', charge: { ...charge, status: 'abandoned' } };
     }
 
-    // Respect the floor between polls however eagerly the agent retries.
-    if (!shouldPoll({ lastPolledAt: charge.lastPolledAt, now, ...(options.force !== undefined ? { force: options.force } : {}) })) {
+    if (
+      !shouldPoll({
+        lastPolledAt: charge.lastPolledAt,
+        now,
+        ...(options.force !== undefined ? { force: options.force } : {}),
+      })
+    ) {
       return { status: 'pending', charge };
     }
 
     if (!charge.providerRef) return { status: 'pending', charge };
     const link = await this.#client.readPaymentLink(charge.providerRef);
 
-    await this.#store.updateCharge(nonce, {
-      lastPolledAt: now,
-      pollCount: charge.pollCount + 1,
-    });
+    await this.#store.updateCharge(nonce, { lastPolledAt: now, pollCount: charge.pollCount + 1 });
     const polled: Charge = { ...charge, lastPolledAt: now, pollCount: charge.pollCount + 1 };
 
     if (!isTerminalStatus(link.status)) return { status: 'pending', charge: polled };
@@ -156,18 +246,27 @@ export class MooveProvider {
   }
 
   async #grant(charge: Charge, link: MoovePaymentLink): Promise<SettlementOutcome> {
-    const received = link.receivedAmount ?? null;
+    const price = this.#prices.get(charge.sku);
+    if (!price) throw new Error(`charge ${charge.nonce} references unknown sku ${charge.sku}`);
 
-    // Checked even though the fee schedule says the payer covers the protocol
-    // fee and the payee receives the full amount. Granting paid capability on
-    // an unverified number is not a saving worth making.
-    if (received !== null && !decimalGte(received, charge.amount)) {
+    const received = link.receivedAmount ?? null;
+    const decision = decideSettlement({
+      expected: charge.amount,
+      received,
+      price,
+      policy: this.#policy,
+    });
+
+    // Below the floor there is nothing worth granting. Leave the charge pending
+    // so the tenant sees it; we cannot refund, so we must not close it quietly.
+    if (decision.kind === 'reject') {
       await this.#store.updateCharge(charge.nonce, { receivedAmount: received });
       return {
         status: 'underpaid',
         charge: { ...charge, receivedAmount: received },
         expected: charge.amount,
-        received,
+        received: received ?? '0',
+        receivedFraction: decision.receivedFraction,
       };
     }
 
@@ -175,12 +274,14 @@ export class MooveProvider {
     const won = await this.#store.claimSettlement(charge.nonce);
     if (!won) return { status: 'already_granted', charge };
 
-    const price = this.#prices.get(charge.sku);
-    if (!price) throw new Error(`charge ${charge.nonce} references unknown sku ${charge.sku}`);
-
     const now = this.#now();
+    const granted: Price =
+      decision.kind === 'full'
+        ? price
+        : { ...price, credits: decision.credits, ttlMs: decision.ttlMs };
+
     const entitlement = entitlementFromPrice({
-      price,
+      price: granted,
       subject: charge.subject,
       chargeId: charge.id,
       entitlementId: mintEntitlementId(),
@@ -193,11 +294,26 @@ export class MooveProvider {
       receivedAmount: received,
     });
 
-    return {
-      status: 'granted',
-      charge: { ...charge, status: 'settled', settledAt: now, receivedAmount: received },
-      entitlementId: entitlement.id,
+    const settled: Charge = {
+      ...charge,
+      status: 'settled',
+      settledAt: now,
+      receivedAmount: received,
     };
+
+    if (decision.kind === 'pro_rata') {
+      return {
+        status: 'partial',
+        charge: settled,
+        entitlementId: entitlement.id,
+        expected: charge.amount,
+        received: received ?? charge.amount,
+        receivedFraction: decision.receivedFraction,
+        credits: decision.credits,
+      };
+    }
+
+    return { status: 'granted', charge: settled, entitlementId: entitlement.id };
   }
 
   /**
@@ -214,4 +330,43 @@ export class MooveProvider {
     }
     return outcomes;
   }
+}
+
+/**
+ * Build the Moove `description`.
+ *
+ * The nonce goes first and is never truncated: it is the only thing binding a
+ * settled payment back to a charge. What follows is for the human reading their
+ * Moove dashboard, where a bare nonce says nothing about what was sold.
+ */
+export function buildChargeDescription(args: {
+  nonce: string;
+  sku: string;
+  toolName?: string;
+  label?: string;
+  maxLength?: number;
+}): string {
+  const limit = args.maxLength ?? MAX_DESCRIPTION_LENGTH;
+  const head = `${NONCE_PREFIX}${args.nonce}`;
+
+  const parts = [args.sku, args.toolName, args.label].filter(
+    (p): p is string => typeof p === 'string' && p.length > 0
+  );
+  // De-duplicate: sku and label are often the same words.
+  const seen = new Set<string>();
+  const tail = parts.filter((p) => {
+    const key = p.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  if (tail.length === 0) return head.slice(0, limit);
+
+  const full = `${head} · ${tail.join(' · ')}`;
+  if (full.length <= limit) return full;
+
+  const room = limit - head.length - 3; // ' · '
+  if (room <= 1) return head.slice(0, limit);
+  return `${head} · ${tail.join(' · ').slice(0, room - 1)}…`;
 }
