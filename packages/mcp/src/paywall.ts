@@ -39,20 +39,27 @@ export interface PaidToolPricing {
   cost?: number;
 }
 
-/** Minimal shape of the MCP server we augment; keeps us off SDK internals. */
+/**
+ * Minimal shape of the MCP server we augment.
+ *
+ * `registerTool` on the real SDK is an overloaded generic whose parameter types
+ * are inferred from the caller's Zod shape. Pinning them here would make
+ * `McpServer` fail the constraint and collapse the wrapper's return type to
+ * this interface, losing `connect` and everything else. The two loose
+ * parameters are deliberate, and confined to this one declaration — what we
+ * actually pass is built and typed inside `withPaywall`.
+ */
 export interface RegisterableServer {
-  registerTool(
-    name: string,
-    config: {
-      title?: string;
-      description?: string;
-      inputSchema?: Record<string, z.ZodTypeAny>;
-      outputSchema?: Record<string, z.ZodTypeAny>;
-      annotations?: Record<string, unknown>;
-      _meta?: Record<string, unknown>;
-    },
-    handler: (args: Record<string, unknown>, extra: unknown) => unknown
-  ): unknown;
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  registerTool(name: string, config: any, handler: any): any;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+}
+
+/** The config we build for `registerTool`, typed on our side of the boundary. */
+interface ToolRegistration {
+  description: string;
+  inputSchema: Record<string, z.ZodTypeAny>;
+  annotations: Record<string, unknown>;
 }
 
 export type PaywalledServer<S extends RegisterableServer> = S & {
@@ -96,24 +103,26 @@ export function withPaywall<S extends RegisterableServer>(
       );
     }
 
+    const registration: ToolRegistration = {
+      description,
+      inputSchema: {
+        ...inputSchema,
+        [argumentName]: z
+          .string()
+          .optional()
+          .describe(
+            'Opaque payment handle. Omit on the first call. If the call returns ' +
+              'PAYMENT_REQUIRED, pass the exact handle from that response here after ' +
+              'the user has paid.'
+          ),
+      },
+      annotations: { ...annotations, 'xyz.tollbooth/paid': true, 'xyz.tollbooth/sku': sku },
+    };
+
     return server.registerTool(
       name,
-      {
-        description,
-        inputSchema: {
-          ...inputSchema,
-          [argumentName]: z
-            .string()
-            .optional()
-            .describe(
-              'Opaque payment handle. Omit on the first call. If the call returns ' +
-                'PAYMENT_REQUIRED, pass the exact handle from that response here after ' +
-                'the user has paid.'
-            ),
-        },
-        annotations: { ...annotations, 'xyz.tollbooth/paid': true, 'xyz.tollbooth/sku': sku },
-      },
-      async (args, extra) => {
+      registration,
+      async (args: Record<string, unknown>, extra: unknown) => {
         const token = typeof args[argumentName] === 'string' ? (args[argumentName] as string) : undefined;
         const rest = { ...args };
         delete rest[argumentName];

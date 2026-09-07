@@ -1,0 +1,24 @@
+{
+  "name": "@tollbooth/example-research-tools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A paid MCP server built with Tollbooth. Three research tools, real payments.",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/http.js",
+    "start:stdio": "node dist/stdio.js",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@tollbooth/core": "0.0.1",
+    "@tollbooth/mcp": "0.0.1",
+    "@tollbooth/moove": "0.0.1",
+    "@tollbooth/store-sqlite": "0.0.1",
+    "zod": "^3.24.1"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "exactOptionalPropertyTypes": false
+  },
+  "references": [
+    {
+      "path": "../../packages/core"
+    },
+    {
+      "path": "../../packages/mcp"
+    },
+    {
+      "path": "../../packages/moove"
+    },
+    {
+      "path": "../../packages/store-sqlite"
+    }
+  ],
+  "include": [
+    "src/**/*.ts"
+  ]
+}
