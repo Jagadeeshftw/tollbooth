@@ -13,7 +13,9 @@ import {
 import type {
   Charge,
   EntitlementStore,
+  PaymentProvider,
   Price,
+  SettlementOutcome,
   SettlementPolicy,
   Sku,
   Subject,
@@ -43,37 +45,6 @@ export const DEFAULT_CHARGE_TTL_MS = 60 * 60 * 1000;
 /** Below this, ordinary cross-chain payers cannot finish in time. */
 export const MIN_CHARGE_TTL_MS = 15 * 60 * 1000;
 
-export type SettlementOutcome =
-  | { status: 'pending'; charge: Charge }
-  | { status: 'granted'; charge: Charge; entitlementId: string }
-  | { status: 'already_granted'; charge: Charge }
-  | { status: 'expired'; charge: Charge }
-  /**
-   * Settled short, but close enough or large enough to be worth something.
-   * A reduced entitlement was granted and the charge is closed: there is no
-   * refund path, so a payer who sent real money never ends up with nothing.
-   */
-  | {
-      status: 'partial';
-      charge: Charge;
-      entitlementId: string;
-      expected: string;
-      received: string;
-      receivedFraction: number;
-      credits: number | null;
-    }
-  /**
-   * Too little to be worth anything. Nothing granted, charge left pending so
-   * reconciliation keeps raising it for the tenant to resolve by hand.
-   */
-  | {
-      status: 'underpaid';
-      charge: Charge;
-      expected: string;
-      received: string;
-      receivedFraction: number;
-    };
-
 export interface MooveProviderOptions {
   client: MooveClient;
   store: EntitlementStore;
@@ -92,7 +63,7 @@ export interface MooveProviderOptions {
  * Ties the Moove API to the entitlement model: issues handles, opens charges,
  * and settles one exactly once when the money arrives.
  */
-export class MooveProvider {
+export class MooveProvider implements PaymentProvider {
   readonly #client: MooveClient;
   readonly #store: EntitlementStore;
   readonly #prices: Map<Sku, Price>;
@@ -140,6 +111,10 @@ export class MooveProvider {
     });
     await this.#store.putSubject(record);
     return record;
+  }
+
+  async getSubjectRecord(subject: Subject): Promise<SubjectRecord | undefined> {
+    return this.#store.getSubject(subject);
   }
 
   /** Push a handle's expiry forward. Called after every successful use. */

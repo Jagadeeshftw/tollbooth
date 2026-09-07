@@ -49,7 +49,8 @@ export {
   NONCE_PREFIX,
   buildChargeDescription,
 } from './provider.js';
-export type { MooveProviderOptions, SettlementOutcome } from './provider.js';
+export type { MooveProviderOptions } from './provider.js';
+export type { PaymentProvider, SettlementOutcome } from '@tollbooth/core';
 
 export { AdaptiveRateLimiter, backoffDelayMs } from './ratelimit.js';
 export type { RateLimiterOptions } from './ratelimit.js';

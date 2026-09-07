@@ -28,6 +28,12 @@ const RULES = [
     reason: 'a store binds the model to one database and nothing else',
   },
   {
+    pkg: 'mcp',
+    allow: ['@tollbooth/core', '@modelcontextprotocol/sdk', 'zod'],
+    reason:
+      'the MCP binding must not depend on a payment provider; it talks to a PaymentProvider',
+  },
+  {
     pkg: 'moove',
     allow: ['@tollbooth/core'],
     reason: 'a provider binding must not depend on MCP; it is reusable over plain HTTP',

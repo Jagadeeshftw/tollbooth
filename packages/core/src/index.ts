@@ -46,6 +46,8 @@ export {
 } from './settlement.js';
 export type { SettlementDecision, SettlementPolicy } from './settlement.js';
 
+export type { PaymentProvider, SettlementOutcome } from './provider.js';
+
 export type { EntitlementStore } from './store.js';
 
 export {

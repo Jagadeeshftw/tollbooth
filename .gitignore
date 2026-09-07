@@ -14,3 +14,7 @@ coverage/
 packages/*/src/**/*.js
 packages/*/src/**/*.d.ts
 packages/*/src/**/*.map
+
+# harness working files
+packages/mcp/harness/logs/
+packages/mcp/harness/cfg/
