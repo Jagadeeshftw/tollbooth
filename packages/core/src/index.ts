@@ -39,7 +39,25 @@ export {
 } from './pricing.js';
 export type { DefinePriceInput } from './pricing.js';
 
+export {
+  DEFAULT_SETTLEMENT_POLICY,
+  assertValidPolicy,
+  decideSettlement,
+} from './settlement.js';
+export type { SettlementDecision, SettlementPolicy } from './settlement.js';
+
 export type { EntitlementStore } from './store.js';
+
+export {
+  DEFAULT_SUBJECT_TTL_MS,
+  MIN_SUBJECT_TTL_MS,
+  assertValidSubjectTtl,
+  isSubjectLive,
+  issueSubjectRecord,
+  mayUseSubject,
+  slideSubject,
+} from './subjects.js';
+export type { SubjectRecord } from './subjects.js';
 
 export type {
   Charge,
