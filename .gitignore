@@ -9,3 +9,8 @@ dist/
 coverage/
 *.sqlite
 *.sqlite-journal
+
+# tsc must never emit beside the sources
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.map
