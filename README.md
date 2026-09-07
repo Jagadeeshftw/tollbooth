@@ -230,10 +230,32 @@ gas is a fraction of a cent.
 - **A short settlement never leaves the payer with nothing.** There is no refund
   path. Within 0.5% grants in full; below that grants pro rata; below 10% grants
   nothing and leaves the charge for the tenant.
-- **Polling is demand-driven.** The agent's own retry is the natural trigger. A
-  probe of the provider's public read endpoint absorbed 56 req/s from one IP
-  without a single 429, so the background reconciler runs rarely and the rate
-  limiter reacts only to observed throttling.
+- **Polling is demand-driven.** The agent's own retry is the natural trigger,
+  and the background reconciler runs rarely.
+
+## Measured against the live Moove API
+
+Everything here was measured on 2026-09-07 against production with a real key,
+and replaces what the documentation implies.
+
+| Question | Measured |
+| --- | --- |
+| Does the public by-id read work with **no key**? | **Yes.** Returns the full object — `status`, `receivedAmount`, `transactionUrl`, plus the owner's profile and wallet. Polling costs nothing against the key budget. |
+| Does it share the authenticated rate-limit bucket? | **No.** 300 requests at 24 req/s: zero 429. The authenticated route tripped at ~141. |
+| Per-key rate limit | Concurrency-sensitive, not a fixed quota. **429 after ~141 requests at 30 concurrent (~27 req/s)**; 20 req/s *paced* ran clean; ~1 req/s for 60s clean. Recovery was immediate. |
+| Does a 429 carry `Retry-After` or `RateLimit-*`? | **No.** Only `Date`, `Content-Type`, `Content-Length`, `Connection`, `server: uvicorn`. Backoff has to be blind, which is why the limiter reacts only to observed throttling. |
+| `toAmount` precision | Exactly the settlement token's decimals. USDC has 6: `1.123456` accepted, `1.1234567` rejected with `INVALID_PAYMENT_LINK_AMOUNT`. `0.000001` accepted — no minimum. |
+| Does `status` flip to `inactive` at expiry? | **Yes, automatically**, no dashboard action. Lazily — observed 10–30s after the timestamp. |
+| Does `maxUsage: N` report partial progress? | **No usage counter is exposed at all** — only `maxUsage`, `status` and `receivedAmount`. A multi-use link cannot be reconciled, which is why Tollbooth always uses `maxUsage: 1`. |
+
+Two things worth knowing that the probes turned up on the way:
+
+- **`toAmount` is normalised on read.** `"1.00"` comes back as `"1"`. Comparisons
+  must be scale-insensitive; `compareDecimal` aligns scales, so this is already
+  handled — but a naive string equality check would report a false shortfall.
+- **The public read leaks more than the link.** Anyone holding a link id can
+  read the payee's `userId`, wallet address, handle and wallet provider. Link
+  ids are not secrets to be shared casually.
 
 ## Development
 
