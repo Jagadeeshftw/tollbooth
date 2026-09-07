@@ -13,6 +13,25 @@ jobs:
       matrix:
         node: ['20', '22', '24']
 
+    # The Postgres store's conformance run needs a real database. This is not
+    # Neon — it does not exercise the pooler or cold starts — but it does keep
+    # the SQL and the transaction semantics honest on every push.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tollbooth_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TOLLBOOTH_TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/tollbooth_test
+
     steps:
       - uses: actions/checkout@v4
 

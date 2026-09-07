@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer as createHttpServer } from 'node:http';
 
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { PostgresEntitlementStore } from '@tollbooth/store-postgres';
 
 import { createServer } from './server.js';
 
@@ -18,16 +19,41 @@ if (!apiKey) {
 }
 
 const PORT = Number(process.env['PORT'] ?? 8080);
+
+/**
+ * Postgres when a connection string is present, SQLite otherwise.
+ *
+ * Deployment runs on Postgres because a container filesystem does not survive a
+ * redeploy, and entitlements people paid for must. SQLite stays the zero-config
+ * default for anyone running this locally.
+ */
+const databaseUrl = process.env['DATABASE_URL'] ?? process.env['TOLLBOOTH_POSTGRES_URL'];
+const store = databaseUrl
+  ? new PostgresEntitlementStore({ connectionString: databaseUrl })
+  : undefined;
+if (store) {
+  await store.ready();
+  console.error('[research-tools] store: postgres');
+} else {
+  console.error('[research-tools] store: sqlite (set DATABASE_URL for Postgres)');
+}
+
 const { server, provider } = createServer({
   apiKey,
   ...(process.env['MOOVE_API_BASE_URL'] ? { baseUrl: process.env['MOOVE_API_BASE_URL'] } : {}),
-  databasePath: process.env['TOLLBOOTH_DB'] ?? '/data/tollbooth.sqlite',
+  ...(store ? { store } : { databasePath: process.env['TOLLBOOTH_DB'] ?? '/data/tollbooth.sqlite' }),
 });
 
 const http = createHttpServer(async (req, res) => {
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, prices: provider.listPrices().map((p) => p.sku) }));
+    res.end(
+      JSON.stringify({
+        ok: true,
+        store: databaseUrl ? 'postgres' : 'sqlite',
+        prices: provider.listPrices().map((p) => p.sku),
+      })
+    );
     return;
   }
   if (req.url !== '/mcp') {
