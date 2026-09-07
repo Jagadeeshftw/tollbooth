@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  button {
+    @apply cursor-pointer;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+@theme {
+  --font-primary: var(--font-inter), "Inter Display", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-dm-mono), "DM Mono", ui-monospace, monospace;
+
+  --color-charcoal-900: #1a1a1a;
+  --color-charcoal-800: #262626;
+  --color-charcoal-700: #333333;
+
+  --color-gray-100: #f9f9f9;
+  --color-gray-200: #f4f4f4;
+  --color-gray-300: #e9ebee;
+  --color-gray-400: #d5d5d5;
+  --color-gray-500: #bdbdbd;
+  --color-gray-600: #878787;
+
+  /* Evidence, not hype: a restrained teal for the one accent. */
+  --color-brand: #0f8a7e;
+  --color-brand-soft: #d9f1ee;
+
+  --shadow-aceternity:
+    0px 2px 3px -1px rgba(0, 0, 0, 0.1), 0px 1px 0px 0px rgba(25, 28, 33, 0.02),
+    0px 0px 0px 1px rgba(25, 28, 33, 0.08);
+}
+
+:root {
+  --divide: var(--color-gray-300);
+  --primary: var(--color-neutral-900);
+  --canvas: var(--color-neutral-400);
+  --canvas-fill: var(--color-neutral-300);
+  --dots: var(--color-gray-300);
+  --line: var(--color-neutral-200);
+  --footer-link: #676767;
+}
+
+.dark {
+  --divide: var(--color-neutral-800);
+  --primary: var(--color-neutral-100);
+  --canvas: var(--color-neutral-200);
+  --canvas-fill: var(--color-neutral-800);
+  --dots: var(--color-neutral-800);
+  --line: var(--color-neutral-700);
+  --footer-link: var(--color-neutral-300);
+}
+
+@theme inline {
+  --color-divide: var(--divide);
+  --color-primary: var(--primary);
+  --color-canvas: var(--canvas);
+  --color-canvas-fill: var(--canvas-fill);
+  --color-dots: var(--dots);
+  --color-line: var(--line);
+  --color-footer-link: var(--footer-link);
+}
