@@ -16,8 +16,15 @@ const execFileAsync = promisify(execFile);
  * come from. A local Postgres is useful for shaking out logic bugs but does not
  * exercise the pooler, TLS, or cold starts after idle suspension.
  */
-const CONNECTION_STRING =
-  process.env['TOLLBOOTH_TEST_POSTGRES_URL'] ?? process.env['DATABASE_URL'] ?? '';
+/**
+ * Deliberately NOT falling back to DATABASE_URL.
+ *
+ * This suite truncates every Tollbooth table on each `create`. Falling back to
+ * the variable a deployment uses would mean anyone running `npm test` on a
+ * machine configured for production wipes entitlements people have paid for.
+ * The test variable has to be set on purpose.
+ */
+const CONNECTION_STRING = process.env['TOLLBOOTH_TEST_POSTGRES_URL'] ?? '';
 
 const TABLES = [
   'tollbooth_entitlements',
@@ -29,7 +36,7 @@ const TABLES = [
 if (!CONNECTION_STRING) {
   describe('PostgresEntitlementStore', () => {
     it(
-      'needs TOLLBOOTH_TEST_POSTGRES_URL to run - skipped rather than pretended',
+      'needs TOLLBOOTH_TEST_POSTGRES_URL (never DATABASE_URL - this suite truncates)',
       { skip: 'no connection string' },
       () => {}
     );
