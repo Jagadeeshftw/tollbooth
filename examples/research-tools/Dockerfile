@@ -1,6 +1,11 @@
 # Build and run the paid research-tools MCP server.
 FROM node:22-slim AS build
 WORKDIR /app
+# better-sqlite3 is a native module. A prebuild usually exists, but if it does
+# not the image build must not fail: the example still offers SQLite as the
+# zero-config local default even though deployment runs on Postgres.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages ./packages
 COPY examples ./examples
