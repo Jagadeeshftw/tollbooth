@@ -27,6 +27,9 @@ export {
   mintSubject,
 } from './ids.js';
 
+export { MemoryEntitlementStore } from './memory.js';
+export type { MemoryStoreOptions } from './memory.js';
+
 export {
   InvalidPriceError,
   MIN_CREDIT_PACK_AMOUNT,
