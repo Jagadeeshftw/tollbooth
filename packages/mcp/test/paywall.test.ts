@@ -73,6 +73,7 @@ class StubProvider implements PaymentProvider {
       subject: args.subject,
       sku: args.sku,
       amount: PACK.amount,
+      price: PACK,
       status: 'pending',
       providerRef: 'pl_stub',
       checkoutUrl: 'https://www.moove.xyz/pay/pl_stub',
@@ -203,6 +204,69 @@ describe('the challenge-and-retry loop', () => {
     await gate.authorise({ ...call, token });
     const after = (await store.getSubject(token))!.expiresAt;
     assert.ok(after >= before, 'use extends the window');
+  });
+});
+
+describe('onChargeOpened and onCall', () => {
+  function setupWithHooks() {
+    const store = new MemoryEntitlementStore();
+    const provider = new StubProvider(store);
+    const chargeOpened: unknown[] = [];
+    const calls: unknown[] = [];
+    let now = 1_000_000;
+    const gate = new Paywall(
+      {
+        provider,
+        store,
+        onChargeOpened: (e) => chargeOpened.push(e),
+        onCall: (e) => calls.push(e),
+      },
+      'tollboothToken',
+      () => now
+    );
+    return { store, provider, gate, chargeOpened, calls, advance: (ms: number) => (now += ms) };
+  }
+
+  it('fires once for a fresh charge, and not again when a retry reuses it', async () => {
+    const { gate, provider, chargeOpened } = setupWithHooks();
+
+    const first = await gate.authorise({ ...call, token: undefined });
+    assert.equal(chargeOpened.length, 1, 'exactly one charge was actually opened');
+    const token = tokenFrom(challengeOf(first));
+
+    // Still unpaid: this re-challenges but must reuse the pending charge.
+    await gate.authorise({ ...call, token });
+    assert.equal(chargeOpened.length, 1, 'reusing a pending charge is not opening a new one');
+    assert.equal(provider.charges, 1);
+  });
+
+  it("carries only tool, sku, nonce, amount, currency and a timestamp — never the handle or the checkout URL", async () => {
+    const { gate, chargeOpened } = setupWithHooks();
+    const result = await gate.authorise({ ...call, token: undefined });
+    const token = tokenFrom(challengeOf(result));
+
+    const event = chargeOpened[0] as Record<string, unknown>;
+    assert.deepEqual(Object.keys(event).sort(), ['amount', 'at', 'currency', 'nonce', 'sku', 'tool'].sort());
+    assert.equal(event['tool'], call.toolName);
+    assert.equal(event['sku'], call.sku);
+    assert.equal(event['at'], 1_000_000);
+    assert.notEqual(event['nonce'], token, 'the nonce is not the handle');
+    assert.ok(!JSON.stringify(event).includes(token), 'the handle must not appear anywhere in the event');
+  });
+
+  it("onCall reports the cost actually charged and when the call happened", async () => {
+    const { gate, provider, calls } = setupWithHooks();
+    const first = await gate.authorise({ ...call, token: undefined });
+    const token = tokenFrom(challengeOf(first));
+    provider.paid = true;
+
+    await gate.authorise({ ...call, token, cost: 7 });
+    const authorised = calls.find((c) => (c as { outcome: string }).outcome === 'authorised') as Record<
+      string,
+      unknown
+    >;
+    assert.equal(authorised['cost'], 7);
+    assert.equal(authorised['at'], 1_000_000);
   });
 });
 
