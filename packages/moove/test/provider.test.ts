@@ -292,6 +292,138 @@ describe('settleCharge', () => {
   });
 });
 
+describe('the price snapshot', () => {
+  it('grants the price recorded on the charge, not whatever the price table says at settlement time', async () => {
+    // The regression scenario: a charge survives a redeploy that changed the
+    // price table for its sku. Modelled here as two providers sharing one
+    // durable store — the same thing a restarted process is, from the
+    // store's point of view.
+    const { state, client } = stubMoove();
+    const store = new MemoryEntitlementStore();
+    const atPurchase = definePrice({
+      sku: 'search',
+      unit: 'credit_pack',
+      amount: '5.00',
+      credits: 100,
+      label: 'v1',
+    });
+    const afterRepricing = definePrice({
+      sku: 'search',
+      unit: 'credit_pack',
+      amount: '20.00',
+      credits: 1000,
+      label: 'v2',
+    });
+
+    const before = new MooveProvider({ client, store, prices: [atPurchase], now: () => 0 });
+    const { charge } = await before.openCharge({ sku: 'search', subject: 'tb_s_1' });
+    assert.deepEqual(charge.price, atPurchase, 'openCharge must snapshot the price it actually used');
+
+    const after = new MooveProvider({ client, store, prices: [afterRepricing], now: () => 0 });
+    state.status = 'completed';
+    state.receivedAmount = '5.00'; // exactly what the buyer actually paid, at the old price
+
+    const outcome = await after.settleCharge(charge.nonce, { force: true });
+    assert.equal(outcome.status, 'granted');
+
+    const [entitlement] = await store.listEntitlements('tb_s_1');
+    assert.equal(
+      entitlement?.remaining,
+      100,
+      'must grant what the buyer actually paid for, not what the sku sells for now'
+    );
+  });
+
+  it('falls back to the current price table for a charge written before the snapshot existed', async () => {
+    const { state, store, provider } = setup();
+    const { charge } = await provider.openCharge({ sku: 'search', subject: 'tb_s_1' });
+
+    // Simulate a pre-migration row: putCharge does not touch price on
+    // conflict in the real stores, but here we are standing in for a store
+    // that never had the column, so overwrite it directly.
+    await store.putCharge({ ...charge, price: null });
+    assert.equal((await store.getCharge(charge.nonce))?.price, null);
+
+    state.status = 'completed';
+    state.receivedAmount = '10.00';
+    const outcome = await provider.settleCharge(charge.nonce, { force: true });
+    assert.equal(outcome.status, 'granted');
+    assert.equal(
+      (await store.listEntitlements('tb_s_1'))[0]?.remaining,
+      250,
+      'a charge with no snapshot must fall back to the live price table, exactly as before this existed'
+    );
+  });
+});
+
+describe('the local price floor', () => {
+  it('refuses to construct with a credit pack below the floor, however it was built', () => {
+    const { client } = stubMoove();
+    const handBuilt: Price = {
+      sku: 'cheap',
+      unit: 'credit_pack',
+      amount: '0.10',
+      currency: 'USDC',
+      credits: 5,
+      ttlMs: null,
+      label: 'cheap',
+    };
+    assert.throws(
+      () => new MooveProvider({ client, store: new MemoryEntitlementStore(), prices: [handBuilt] }),
+      /below the 5\.00 minimum/
+    );
+  });
+
+  it("does not take definePrice's allowBelowMinimum on trust", () => {
+    const { client } = stubMoove();
+    const trial = definePrice({
+      sku: 'trial',
+      unit: 'credit_pack',
+      amount: '1.00',
+      credits: 25,
+      allowBelowMinimum: true,
+    });
+    assert.throws(
+      () => new MooveProvider({ client, store: new MemoryEntitlementStore(), prices: [trial] }),
+      /below the 5\.00 minimum/,
+      "a price built with definePrice's own bypass still needs the provider's local exemption"
+    );
+  });
+
+  it('sells a below-floor sku only once the provider itself, locally, names it exempt', () => {
+    const { client } = stubMoove();
+    const trial = definePrice({
+      sku: 'trial',
+      unit: 'credit_pack',
+      amount: '1.00',
+      credits: 25,
+      allowBelowMinimum: true,
+    });
+    assert.doesNotThrow(
+      () =>
+        new MooveProvider({
+          client,
+          store: new MemoryEntitlementStore(),
+          prices: [trial],
+          allowBelowMinimum: ['trial'],
+        })
+    );
+  });
+
+  it('leaves prices above the floor, and other skus, unaffected by the exemption list', () => {
+    const { client } = stubMoove();
+    assert.doesNotThrow(
+      () =>
+        new MooveProvider({
+          client,
+          store: new MemoryEntitlementStore(),
+          prices: [PACK],
+          allowBelowMinimum: ['some-other-sku'],
+        })
+    );
+  });
+});
+
 describe('poll schedule', () => {
   it('follows 3s, 6s, 12s, 24s, 48s then 60s', () => {
     const noJitter = () => 0.5;

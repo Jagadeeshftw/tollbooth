@@ -49,6 +49,8 @@ interface ChargeRow {
   subject: string;
   sku: string;
   amount: string;
+  /** `pg` parses JSONB itself; NULL only for a pre-migration row. */
+  price: Record<string, unknown> | null;
   status: string;
   provider_ref: string | null;
   checkout_url: string | null;
@@ -350,15 +352,19 @@ export class PostgresEntitlementStore implements EntitlementStore {
   async putCharge(c: Charge): Promise<void> {
     await this.#query(
       `INSERT INTO tollbooth_charges
-         (nonce, id, subject, sku, amount, status, provider_ref, checkout_url,
+         (nonce, id, subject, sku, amount, price, status, provider_ref, checkout_url,
           created_at, expires_at, settled_at, received_amount, last_polled_at, poll_count)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
        ON CONFLICT (nonce) DO UPDATE SET
          status = EXCLUDED.status,
          provider_ref = EXCLUDED.provider_ref,
          checkout_url = EXCLUDED.checkout_url`,
       [
-        c.nonce, c.id, c.subject, c.sku, c.amount, c.status, c.providerRef, c.checkoutUrl,
+        c.nonce, c.id, c.subject, c.sku, c.amount,
+        // Never touched on conflict: the snapshot is fixed at creation. `pg`
+        // needs the JSON text explicitly; it only parses JSONB coming back.
+        c.price === null ? null : JSON.stringify(c.price),
+        c.status, c.providerRef, c.checkoutUrl,
         c.createdAt, c.expiresAt, c.settledAt, c.receivedAmount, c.lastPolledAt, c.pollCount,
       ]
     );
@@ -479,6 +485,7 @@ function toCharge(row: ChargeRow): Charge {
     subject: row.subject,
     sku: row.sku,
     amount: row.amount,
+    price: row.price as Charge['price'],
     status: row.status as ChargeStatus,
     providerRef: row.provider_ref,
     checkoutUrl: row.checkout_url,

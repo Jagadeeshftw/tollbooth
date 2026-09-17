@@ -36,6 +36,38 @@ export interface DefinePriceInput {
 }
 
 /**
+ * Re-check a credit pack against {@link MIN_CREDIT_PACK_AMOUNT}, independent of
+ * how the `Price` was built.
+ *
+ * `definePrice` enforces this floor too, but its `allowBelowMinimum` escape
+ * hatch is consumed at construction time and leaves no trace on the `Price`
+ * object it returns — there is no field on `Price` recording that a bypass
+ * happened. So a below-floor price that reaches a payment provider by any
+ * other route (built by hand, or — once prices can be edited remotely —
+ * loaded from outside this process) looks identical to one that was never
+ * validated at all. A provider that wants a local floor must re-check the
+ * object itself, which is what this is for: see
+ * `MooveProviderOptions.allowBelowMinimum`, which exempts specific SKUs by
+ * name, in code the tenant controls, rather than trusting anything the
+ * `Price` object claims about itself.
+ *
+ * Only `credit_pack` has a floor; `per_call` is fixed at one credit and
+ * `time_pass` has no minimum today.
+ */
+export function assertPriceFloor(price: Price): void {
+  if (price.unit !== 'credit_pack') return;
+  if (compareDecimal(price.amount, MIN_CREDIT_PACK_AMOUNT) < 0) {
+    throw new InvalidPriceError(
+      `credit pack ${JSON.stringify(price.sku)} would be sold at ${price.amount} ` +
+        `${price.currency}, below the ${MIN_CREDIT_PACK_AMOUNT} minimum. It was not rejected ` +
+        'when it was built, which means either it bypassed definePrice or it used ' +
+        'allowBelowMinimum — and a payment provider does not trust that bypass by itself. ' +
+        "Name this sku in the provider's own allowBelowMinimum list if this is intentional."
+    );
+  }
+}
+
+/**
  * Build a validated {@link Price}, rejecting combinations the model cannot
  * represent. Every unit's invariants are enforced here so that the rest of the
  * system can treat a `Price` as already-coherent.

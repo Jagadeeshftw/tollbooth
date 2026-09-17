@@ -84,6 +84,10 @@ export function createServer(options: ServerOptions) {
     }),
     store,
     prices: PRICES,
+    // research-trial is a deliberate below-floor $1 pack (see its definePrice
+    // call above); the provider does not take definePrice's allowBelowMinimum
+    // on trust, so it has to be named here too.
+    allowBelowMinimum: ['research-trial'],
   });
 
   function buildServer() {
