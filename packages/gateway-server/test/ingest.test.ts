@@ -42,6 +42,9 @@ if (!CONNECTION_STRING) {
       amount: '10.00',
       receivedAmount: '10.00',
       receivedFraction: null,
+      // Realistic default: only `granted`/`partial` ever carry a real count
+      // (see projectSettlement) — tests that need one override it explicitly.
+      credits: null,
       ...over,
     };
   }
@@ -252,6 +255,92 @@ if (!CONNECTION_STRING) {
         await ingestBatch(db, t.id, [chargeOpened({ chargeRef: '6'.repeat(64), at: day2 })]);
         assert.equal((await rollupRow(db, t.id, '2026-01-01', 'search')).charges_opened, 1);
         assert.equal((await rollupRow(db, t.id, '2026-01-02', 'search')).charges_opened, 1);
+      } finally {
+        await db.close();
+      }
+    });
+  });
+
+  describe('time to settle', () => {
+    it('computes the delta in the ordinary order: opened, then settled', async () => {
+      const db = await freshDatabase();
+      try {
+        const t = await tenant(db);
+        const ref = 'b1'.repeat(32);
+        await ingestBatch(db, t.id, [chargeOpened({ chargeRef: ref, at: 1_000 })]);
+        await ingestBatch(db, t.id, [settlement({ chargeRef: ref, at: 46_000 })]);
+        const row = await chargeRow(db, t.id, ref);
+        assert.equal(Number(row.time_to_settle_ms), 45_000);
+      } finally {
+        await db.close();
+      }
+    });
+
+    it('computes the same delta when the settlement arrives first', async () => {
+      const db = await freshDatabase();
+      try {
+        const t = await tenant(db);
+        const ref = 'b2'.repeat(32);
+        await ingestBatch(db, t.id, [settlement({ chargeRef: ref, at: 46_000 })]);
+        let row = await chargeRow(db, t.id, ref);
+        assert.equal(row.time_to_settle_ms, null, 'not computable until opened_at is known');
+        await ingestBatch(db, t.id, [chargeOpened({ chargeRef: ref, at: 1_000 })]);
+        row = await chargeRow(db, t.id, ref);
+        assert.equal(Number(row.time_to_settle_ms), 45_000, 'computed the moment the missing side arrived');
+      } finally {
+        await db.close();
+      }
+    });
+
+    it('stays null for a charge that has not settled yet', async () => {
+      const db = await freshDatabase();
+      try {
+        const t = await tenant(db);
+        const ref = 'b3'.repeat(32);
+        await ingestBatch(db, t.id, [chargeOpened({ chargeRef: ref })]);
+        assert.equal((await chargeRow(db, t.id, ref)).time_to_settle_ms, null);
+      } finally {
+        await db.close();
+      }
+    });
+  });
+
+  describe('credits outstanding', () => {
+    it('a granted settlement adds to credits_granted using the wire event\'s own count', async () => {
+      const db = await freshDatabase();
+      try {
+        const t = await tenant(db);
+        await ingestBatch(db, t.id, [settlement({ chargeRef: 'c1'.repeat(32), status: 'granted', credits: 250 })]);
+        const row = await rollupRow(db, t.id, '1970-01-01', 'search');
+        assert.equal(Number(row.credits_granted), 250);
+        assert.equal(Number(row.credits_consumed), 0);
+      } finally {
+        await db.close();
+      }
+    });
+
+    it('an authorised call adds to credits_consumed by its cost; a challenged call does not', async () => {
+      const db = await freshDatabase();
+      try {
+        const t = await tenant(db);
+        await ingestBatch(db, t.id, [
+          call({ outcome: 'authorised', cost: 2 }),
+          call({ outcome: 'challenged', cost: 1 }),
+        ]);
+        const row = await rollupRow(db, t.id, '1970-01-01', 'search');
+        assert.equal(Number(row.credits_consumed), 2, 'only the authorised call actually spent anything');
+      } finally {
+        await db.close();
+      }
+    });
+
+    it('a settlement with no known credits (pre-migration charge) does not touch credits_granted', async () => {
+      const db = await freshDatabase();
+      try {
+        const t = await tenant(db);
+        await ingestBatch(db, t.id, [settlement({ chargeRef: 'c2'.repeat(32), status: 'granted', credits: null })]);
+        const row = await rollupRow(db, t.id, '1970-01-01', 'search');
+        assert.equal(Number(row.credits_granted), 0);
       } finally {
         await db.close();
       }

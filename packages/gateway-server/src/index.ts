@@ -48,4 +48,7 @@ export type { IssuedIngestToken } from './ingest-tokens.js';
 export { ingestBatch } from './ingest.js';
 export type { IngestResult } from './ingest.js';
 
+export { creditsOutstanding, medianTimeToPaySeconds } from './queries.js';
+export type { CreditsOutstanding } from './queries.js';
+
 export { mintIngestToken, mintTenantId, secretsEqual } from './ids.js';

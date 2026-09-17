@@ -141,6 +141,22 @@ export const MIGRATIONS: readonly Migration[] = [
          WITH CHECK (tenant_id = current_setting('app.tenant_id', true))`,
     ],
   },
+  {
+    id: '0002_credits_and_time_to_pay',
+    statements: [
+      // Filled in by whichever of charge_opened/settlement arrives SECOND for
+      // a charge_ref, once both opened_at and settled_at are known — see
+      // ingest.ts. Never recomputed afterward: a charge is settled once.
+      `ALTER TABLE gateway_charges ADD COLUMN IF NOT EXISTS time_to_settle_ms BIGINT`,
+
+      // Credits, not dollars: "outstanding" is unspent purchased capacity,
+      // which only these two counters together can express. Summed across
+      // every day for a tenant+sku, never windowed — a credit bought last
+      // month and unspent today is still outstanding today.
+      `ALTER TABLE gateway_daily_rollups ADD COLUMN IF NOT EXISTS credits_granted BIGINT NOT NULL DEFAULT 0`,
+      `ALTER TABLE gateway_daily_rollups ADD COLUMN IF NOT EXISTS credits_consumed BIGINT NOT NULL DEFAULT 0`,
+    ],
+  },
 ];
 
 export const MIGRATIONS_TABLE = `

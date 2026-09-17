@@ -80,7 +80,15 @@ async function applyChargeOpened(client: PoolClient, tenantId: string, event: Wi
        sku       = COALESCE(gateway_charges.sku, EXCLUDED.sku),
        amount    = COALESCE(gateway_charges.amount, EXCLUDED.amount),
        currency  = COALESCE(gateway_charges.currency, EXCLUDED.currency),
-       opened_at = COALESCE(gateway_charges.opened_at, EXCLUDED.opened_at)`,
+       opened_at = COALESCE(gateway_charges.opened_at, EXCLUDED.opened_at),
+       -- Reordering: a settlement already landed and set settled_at before
+       -- this charge_opened arrived. opened_at was NULL until this INSERT,
+       -- so this is the one moment we can compute the delta from this side.
+       time_to_settle_ms = CASE
+         WHEN gateway_charges.opened_at IS NULL AND gateway_charges.settled_at IS NOT NULL
+           THEN gateway_charges.settled_at - EXCLUDED.opened_at
+         ELSE gateway_charges.time_to_settle_ms
+       END`,
     [tenantId, event.chargeRef, event.tool, event.sku, event.amount, event.currency, event.at]
   );
   await bumpRollup(client, tenantId, event.at, event.sku, { charges_opened: 1 });
@@ -116,7 +124,17 @@ async function applySettlement(client: PoolClient, tenantId: string, event: Wire
                                   THEN EXCLUDED.received_amount ELSE gateway_charges.received_amount END,
        received_fraction  = CASE WHEN gateway_charges.settled_at IS NULL OR EXCLUDED.settled_at >= gateway_charges.settled_at
                                   THEN EXCLUDED.received_fraction ELSE gateway_charges.received_fraction END,
-       settled_at         = GREATEST(COALESCE(gateway_charges.settled_at, EXCLUDED.settled_at), EXCLUDED.settled_at)`,
+       settled_at         = GREATEST(COALESCE(gateway_charges.settled_at, EXCLUDED.settled_at), EXCLUDED.settled_at),
+       -- Ordinary order: opened_at is already known, and this observation is
+       -- the one winning the race above. Compute the delta from that known
+       -- open time. If opened_at isn't known yet, leave it for
+       -- applyChargeOpened to fill in once it arrives.
+       time_to_settle_ms = CASE
+         WHEN gateway_charges.opened_at IS NOT NULL
+              AND (gateway_charges.settled_at IS NULL OR EXCLUDED.settled_at >= gateway_charges.settled_at)
+           THEN EXCLUDED.settled_at - gateway_charges.opened_at
+         ELSE gateway_charges.time_to_settle_ms
+       END`,
     [tenantId, event.chargeRef, event.sku, event.amount, event.status, event.receivedAmount, event.receivedFraction, event.at]
   );
 
@@ -124,10 +142,15 @@ async function applySettlement(client: PoolClient, tenantId: string, event: Wire
   await bumpRollup(client, tenantId, event.at, event.sku, {
     [SETTLEMENT_ROLLUP_COLUMN[event.status]]: 1,
     revenue_amount: revenue,
+    ...(event.credits !== null ? { credits_granted: event.credits } : {}),
   });
 }
 
-/** Append-only: a call is a fact about one moment, never revised by a later event. */
+/**
+ * Append-only: a call is a fact about one moment, never revised by a later
+ * event. Only an authorised call actually spends credits — a challenged one
+ * reached no entitlement to spend from.
+ */
 async function applyCall(client: PoolClient, tenantId: string, event: WireCallEvent): Promise<void> {
   await client.query(
     `INSERT INTO gateway_calls
@@ -149,6 +172,7 @@ async function applyCall(client: PoolClient, tenantId: string, event: WireCallEv
   );
   await bumpRollup(client, tenantId, event.at, event.sku, {
     [event.outcome === 'authorised' ? 'calls_authorised' : 'calls_challenged']: 1,
+    ...(event.outcome === 'authorised' ? { credits_consumed: event.cost } : {}),
   });
 }
 
@@ -161,8 +185,16 @@ type RollupColumn =
   | 'calls_authorised'
   | 'calls_challenged';
 
-/** Integer columns increment by 1; `revenue_amount` is a decimal string, added in Postgres as NUMERIC — never as a JS float. */
-type RollupDelta = Partial<Record<RollupColumn, 1>> & { revenue_amount?: string };
+/**
+ * Count columns increment by 1. `credits_granted`/`credits_consumed` are
+ * arbitrary counts (a pack can be any size). `revenue_amount` is a decimal
+ * string, added in Postgres as NUMERIC — never as a JS float.
+ */
+type RollupDelta = Partial<Record<RollupColumn, 1>> & {
+  revenue_amount?: string;
+  credits_granted?: number;
+  credits_consumed?: number;
+};
 
 /**
  * Pre-aggregated so the dashboard never scans raw events. Column names come
