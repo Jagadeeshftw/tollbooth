@@ -55,6 +55,14 @@ const RULES = [
       'gateway mode is opt-in: the library must work with no Tollbooth account, so nothing ' +
       'else may depend on this, and this may not reach into mcp or moove for their types',
   },
+  {
+    pkg: 'gateway',
+    allow: ['@tollbooth/gateway-client', 'pg'],
+    reason:
+      'the gateway server may depend on the wire-event contract its own client publishes, ' +
+      'and on nothing from the paywall chain (core, mcp, moove, either store) in either ' +
+      'direction — a tenant entitlement store and this must never share a connection',
+  },
 ];
 
 const IMPORT_RE = /(?:^|\n)\s*(?:import|export)[\s\S]*?from\s+['"]([^'"]+)['"]/g;
