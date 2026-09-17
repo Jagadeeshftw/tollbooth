@@ -1,0 +1,19 @@
+{
+  "name": "@tollbooth/gateway-server",
+  "version": "0.0.1",
+  "description": "The hosted Tollbooth gateway: GitHub sign-in, tenants, ingest tokens and idempotent ingest, and the Neon schema behind the dashboard.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts"
+  },
+  "dependencies": { "@tollbooth/gateway-client": "0.0.1", "pg": "^8.13.1" },
+  "devDependencies": { "@types/pg": "^8.11.10" }
+}

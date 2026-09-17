@@ -56,7 +56,7 @@ const RULES = [
       'else may depend on this, and this may not reach into mcp or moove for their types',
   },
   {
-    pkg: 'gateway',
+    pkg: 'gateway-server',
     allow: ['@tollbooth/gateway-client', 'pg'],
     reason:
       'the gateway server may depend on the wire-event contract its own client publishes, ' +
