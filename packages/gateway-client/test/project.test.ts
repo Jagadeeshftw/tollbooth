@@ -99,8 +99,39 @@ describe('the wire policy: fingerprints, tool names, skus, amounts and timestamp
       const projected = projectSettlement({ status: 'granted', charge: BASE_CHARGE, entitlementId: 'tb_e_1' }, now)!;
       assert.deepEqual(
         Object.keys(projected).sort(),
-        ['amount', 'at', 'chargeRef', 'eventId', 'kind', 'receivedAmount', 'receivedFraction', 'sku', 'status'].sort()
+        ['amount', 'at', 'chargeRef', 'credits', 'eventId', 'kind', 'receivedAmount', 'receivedFraction', 'sku', 'status'].sort()
       );
+    });
+
+    describe('credits granted', () => {
+      it('granted (full) reads the count from the charge\'s own price snapshot, not the outcome', () => {
+        const projected = projectSettlement({ status: 'granted', charge: BASE_CHARGE, entitlementId: 'e' }, now)!;
+        assert.equal(projected.credits, BASE_CHARGE.price!.credits);
+      });
+
+      it('partial reads the scaled count the outcome already carries', () => {
+        const projected = projectSettlement(
+          { status: 'partial', charge: BASE_CHARGE, entitlementId: 'e', expected: '10.00', received: '5.00', receivedFraction: 0.5, credits: 125 },
+          now
+        )!;
+        assert.equal(projected.credits, 125);
+      });
+
+      it('underpaid and expired granted nothing', () => {
+        const underpaid = projectSettlement(
+          { status: 'underpaid', charge: BASE_CHARGE, expected: '10.00', received: '0.50', receivedFraction: 0.05 },
+          now
+        )!;
+        const expired = projectSettlement({ status: 'expired', charge: BASE_CHARGE }, now)!;
+        assert.equal(underpaid.credits, null);
+        assert.equal(expired.credits, null);
+      });
+
+      it('a granted settlement with no price snapshot (pre-migration charge) reports unknown, not zero', () => {
+        const preMigration = { ...BASE_CHARGE, price: null };
+        const projected = projectSettlement({ status: 'granted', charge: preMigration, entitlementId: 'e' }, now)!;
+        assert.equal(projected.credits, null);
+      });
     });
 
     it(

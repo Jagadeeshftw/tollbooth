@@ -108,4 +108,10 @@ export interface WireSettlementEvent extends WireEventBase {
   readonly amount: string;
   readonly receivedAmount: string | null;
   readonly receivedFraction: number | null;
+  /**
+   * Credits this settlement actually granted. `null` for an unlimited pass,
+   * or for `expired` (nothing granted). A count, not an identifier — as
+   * disclosive as `amount`, nothing more.
+   */
+  readonly credits: number | null;
 }

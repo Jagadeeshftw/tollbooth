@@ -97,5 +97,22 @@ export function projectSettlement(outcome: SettlementOutcome, now: number): Wire
     receivedAmount: charge.receivedAmount,
     receivedFraction:
       outcome.status === 'partial' || outcome.status === 'underpaid' ? outcome.receivedFraction : null,
+    credits: creditsGrantedFrom(outcome),
   };
+}
+
+/**
+ * How many credits this settlement actually granted.
+ *
+ * `partial` carries its own scaled count. `granted` (full) does not — the
+ * outcome only ever names an entitlement id, not how much it holds — so this
+ * reads the price snapshotted onto the charge at open time instead (see
+ * `Charge.price` in `@tollbooth/core`). A charge written before that snapshot
+ * existed reads `price: null`, and this reports `null` for it: unknown, not
+ * zero. `underpaid` and `expired` genuinely granted nothing.
+ */
+function creditsGrantedFrom(outcome: SettlementOutcome): number | null {
+  if (outcome.status === 'partial') return outcome.credits;
+  if (outcome.status === 'granted') return outcome.charge.price?.credits ?? null;
+  return null;
 }
