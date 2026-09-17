@@ -36,8 +36,32 @@ export interface PaywallConfig {
   copyId?: string;
   /** Renderer ids permitted beyond the default. Deny-by-default otherwise. */
   allow?: readonly string[];
-  /** Called on every settlement observation. Use it to log or alert. */
+  /**
+   * Called on every settlement observation.
+   *
+   * Carries the raw {@link SettlementOutcome}, including the charge's handle,
+   * nonce, provider link id and checkout URL — all of it, unfiltered, because
+   * this hook is for the tenant's own process: their own logs, their own
+   * alerts. Anything that leaves this process needs its own allow-list
+   * projection first; see `@tollbooth/gateway-client` for the one gateway
+   * mode uses. This package does not know that package exists.
+   */
   onSettlement?: (outcome: SettlementOutcome) => void;
+  /**
+   * Called every time a *new* checkout link is opened — not when a pending
+   * one is reused for a retry, which is not a new purchase attempt.
+   *
+   * Carries no handle and no link id: only what identifies the sale, not the
+   * buyer or the payee's checkout page.
+   */
+  onChargeOpened?: (event: {
+    tool: string;
+    sku: Sku;
+    nonce: string;
+    amount: string;
+    currency: string;
+    at: number;
+  }) => void;
   /**
    * Called on every paid tool call, before and after the gate decides.
    *
@@ -48,6 +72,8 @@ export interface PaywallConfig {
   onCall?: (event: {
     tool: string;
     sku: Sku;
+    cost: number;
+    at: number;
     tokenPresented: boolean;
     tokenFingerprint: string | null;
     tokenRecognised: boolean;
@@ -239,7 +265,7 @@ export class Paywall {
   }
 
   #report(
-    args: { sku: Sku; toolName: string },
+    args: { sku: Sku; cost: number; toolName: string },
     tokenPresented: boolean,
     tokenFingerprint: string | null,
     tokenRecognised: boolean,
@@ -248,6 +274,8 @@ export class Paywall {
     this.#config.onCall?.({
       tool: args.toolName,
       sku: args.sku,
+      cost: args.cost,
+      at: this.#now(),
       tokenPresented,
       tokenFingerprint,
       tokenRecognised,
@@ -295,16 +323,38 @@ export class Paywall {
     args: { sku: Sku; toolName: string; client?: ClientProfile }
   ): Promise<ChallengeResult> {
     const { provider } = this.#config;
-    const price = provider.priceFor(args.sku);
-    if (!price) throw new Error(`no price registered for sku ${JSON.stringify(args.sku)}`);
+    const currentPrice = provider.priceFor(args.sku);
+    if (!currentPrice) throw new Error(`no price registered for sku ${JSON.stringify(args.sku)}`);
 
     // Reuse an outstanding charge so a retry keeps the same link and handle
     // rather than opening a second checkout for the same purchase.
     const existing = await this.#pendingChargeFor(subject, args.sku);
-    const { charge, checkoutUrl } =
-      existing && existing.checkoutUrl
-        ? { charge: existing, checkoutUrl: existing.checkoutUrl }
-        : await provider.openCharge({ sku: args.sku, subject, toolName: args.toolName });
+    let charge: Charge;
+    let checkoutUrl: string;
+    if (existing && existing.checkoutUrl) {
+      charge = existing;
+      checkoutUrl = existing.checkoutUrl;
+    } else {
+      const opened = await provider.openCharge({ sku: args.sku, subject, toolName: args.toolName });
+      charge = opened.charge;
+      checkoutUrl = opened.checkoutUrl;
+      // Only a genuinely new checkout is "opened" — reusing a pending one on
+      // retry is not a second purchase attempt.
+      this.#config.onChargeOpened?.({
+        tool: args.toolName,
+        sku: args.sku,
+        nonce: charge.nonce,
+        amount: charge.amount,
+        currency: (charge.price ?? currentPrice).currency,
+        at: this.#now(),
+      });
+    }
+
+    // What this specific charge will actually be checked against, not
+    // whatever the price table says right now. The two disagree once a
+    // reused pending charge survives a price change — the checkout page was
+    // already rendered at the old price, so the challenge should say so too.
+    const price = charge.price ?? currentPrice;
 
     const challenge: Challenge = {
       sku: args.sku,

@@ -48,6 +48,13 @@ const RULES = [
     allow: ['@tollbooth/core'],
     reason: 'a provider binding must not depend on MCP; it is reusable over plain HTTP',
   },
+  {
+    pkg: 'gateway-client',
+    allow: ['@tollbooth/core'],
+    reason:
+      'gateway mode is opt-in: the library must work with no Tollbooth account, so nothing ' +
+      'else may depend on this, and this may not reach into mcp or moove for their types',
+  },
 ];
 
 const IMPORT_RE = /(?:^|\n)\s*(?:import|export)[\s\S]*?from\s+['"]([^'"]+)['"]/g;
