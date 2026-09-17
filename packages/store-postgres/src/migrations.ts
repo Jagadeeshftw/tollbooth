@@ -63,6 +63,17 @@ export const MIGRATIONS: readonly Migration[] = [
        )`,
     ],
   },
+  {
+    id: '0002_charge_price_snapshot',
+    statements: [
+      // Nullable, and never backfilled: there is no way to recover what an
+      // old charge's price table looked like at the moment it was opened.
+      // Existing rows read back as `price: null`, and #grant falls back to
+      // the current price table for those — exactly what it already did for
+      // every charge before this column existed.
+      `ALTER TABLE tollbooth_charges ADD COLUMN IF NOT EXISTS price JSONB`,
+    ],
+  },
 ];
 
 export const MIGRATIONS_TABLE = `

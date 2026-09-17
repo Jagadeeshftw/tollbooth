@@ -71,6 +71,17 @@ export interface Charge {
   readonly subject: Subject;
   readonly sku: Sku;
   readonly amount: string;
+  /**
+   * The price this charge was opened against, snapshotted at creation.
+   *
+   * Settlement grants from this, never from whatever the price table says at
+   * settlement time — those can differ the moment a charge outlives a
+   * redeploy that changed a price, and a durable store means charges do
+   * outlive redeploys. `null` only for a charge written before this field
+   * existed; a provider granting one of those falls back to its current
+   * price table, which is exactly what every charge did before this existed.
+   */
+  readonly price: Price | null;
   readonly status: ChargeStatus;
   /** Provider's own id for the request, e.g. a Moove payment-link id. */
   readonly providerRef: string | null;

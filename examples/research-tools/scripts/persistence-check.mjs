@@ -45,6 +45,7 @@ try {
       subject: SUBJECT,
       sku: 'research',
       amount: '5.00',
+      price: PACK,
       status: 'settled',
       providerRef: 'pl_persistence_probe',
       checkoutUrl: 'https://www.moove.xyz/pay/pl_persistence_probe',

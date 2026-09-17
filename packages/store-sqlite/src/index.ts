@@ -45,6 +45,8 @@ interface ChargeRow {
   subject: string;
   sku: string;
   amount: string;
+  /** JSON-serialised {@link Price} snapshot, or NULL for a pre-migration row. */
+  price: string | null;
   status: string;
   provider_ref: string | null;
   checkout_url: string | null;
@@ -75,6 +77,7 @@ CREATE TABLE IF NOT EXISTS charges (
   subject         TEXT    NOT NULL,
   sku             TEXT    NOT NULL,
   amount          TEXT    NOT NULL,
+  price           TEXT,               -- JSON snapshot; NULL only pre-migration
   status          TEXT    NOT NULL,
   provider_ref    TEXT,
   checkout_url    TEXT,
@@ -143,6 +146,17 @@ export class SqliteEntitlementStore implements EntitlementStore {
       }
     }
     if (lastError) throw lastError;
+
+    // `CREATE TABLE IF NOT EXISTS` above only shapes a brand-new database; a
+    // file that already existed before `price` was added to `charges` keeps
+    // its old shape. Add the column defensively, and ignore the one error
+    // that means it is already there.
+    try {
+      this.#db.exec('ALTER TABLE charges ADD COLUMN price TEXT');
+    } catch (error) {
+      const message = (error as { message?: string }).message ?? '';
+      if (!message.includes('duplicate column name')) throw error;
+    }
   }
 
   async consume(subject: Subject, sku: Sku, cost = 1): Promise<ConsumeResult> {
@@ -243,10 +257,10 @@ export class SqliteEntitlementStore implements EntitlementStore {
     this.#db
       .prepare(
         `INSERT INTO charges
-           (nonce, id, subject, sku, amount, status, provider_ref, checkout_url,
+           (nonce, id, subject, sku, amount, price, status, provider_ref, checkout_url,
             created_at, expires_at, settled_at, received_amount, last_polled_at, poll_count)
          VALUES
-           (@nonce, @id, @subject, @sku, @amount, @status, @providerRef, @checkoutUrl,
+           (@nonce, @id, @subject, @sku, @amount, @price, @status, @providerRef, @checkoutUrl,
             @createdAt, @expiresAt, @settledAt, @receivedAmount, @lastPolledAt, @pollCount)
          ON CONFLICT(nonce) DO UPDATE SET
            status = excluded.status,
@@ -259,6 +273,8 @@ export class SqliteEntitlementStore implements EntitlementStore {
         subject: c.subject,
         sku: c.sku,
         amount: c.amount,
+        // Never touched on conflict: the snapshot is fixed at creation.
+        price: c.price === null ? null : JSON.stringify(c.price),
         status: c.status,
         providerRef: c.providerRef,
         checkoutUrl: c.checkoutUrl,
@@ -383,6 +399,7 @@ function toCharge(row: ChargeRow): Charge {
     subject: row.subject,
     sku: row.sku,
     amount: row.amount,
+    price: row.price === null ? null : JSON.parse(row.price),
     status: row.status as ChargeStatus,
     providerRef: row.provider_ref,
     checkoutUrl: row.checkout_url,

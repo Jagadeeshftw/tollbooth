@@ -33,6 +33,7 @@ export type { MemoryStoreOptions } from './memory.js';
 export {
   InvalidPriceError,
   MIN_CREDIT_PACK_AMOUNT,
+  assertPriceFloor,
   definePrice,
   entitlementFromPrice,
   isUsable,

@@ -1,5 +1,6 @@
 import {
   DEFAULT_SETTLEMENT_POLICY,
+  assertPriceFloor,
   assertValidPolicy,
   decideSettlement,
   entitlementFromPrice,
@@ -50,6 +51,16 @@ export interface MooveProviderOptions {
   store: EntitlementStore;
   /** Everything this server sells. Looked up by sku when granting. */
   prices: readonly Price[];
+  /**
+   * Credit-pack SKUs permitted to sell below {@link MIN_CREDIT_PACK_AMOUNT}.
+   *
+   * Named here, in code the tenant deploys — never inferred from anything the
+   * `Price` object itself claims, including `definePrice`'s own
+   * `allowBelowMinimum`. See {@link assertPriceFloor} for why. Every price not
+   * on this list is re-validated against the floor when the provider is
+   * constructed, whatever built it.
+   */
+  allowBelowMinimum?: readonly Sku[];
   /** Defaults to {@link DEFAULT_CHARGE_TTL_MS}; must be at least {@link MIN_CHARGE_TTL_MS}. */
   chargeTtlMs?: number;
   /** Defaults to {@link DEFAULT_SETTLEMENT_POLICY}. */
@@ -76,6 +87,13 @@ export class MooveProvider implements PaymentProvider {
     this.#client = options.client;
     this.#store = options.store;
     this.#prices = new Map(options.prices.map((p) => [p.sku, p]));
+
+    // Local, not trusting: the price object's own history is not consulted,
+    // only whether the tenant's own deployed code named this sku exempt.
+    const exempt = new Set(options.allowBelowMinimum ?? []);
+    for (const price of options.prices) {
+      if (!exempt.has(price.sku)) assertPriceFloor(price);
+    }
 
     const ttl = options.chargeTtlMs ?? DEFAULT_CHARGE_TTL_MS;
     if (!Number.isFinite(ttl) || ttl < MIN_CHARGE_TTL_MS) {
@@ -162,6 +180,7 @@ export class MooveProvider implements PaymentProvider {
       subject: args.subject,
       sku: args.sku,
       amount: price.amount,
+      price,
       status: 'pending',
       providerRef: created.id,
       checkoutUrl: created.url,
@@ -221,7 +240,12 @@ export class MooveProvider implements PaymentProvider {
   }
 
   async #grant(charge: Charge, link: MoovePaymentLink): Promise<SettlementOutcome> {
-    const price = this.#prices.get(charge.sku);
+    // The price at purchase, not whatever the table says now: those can
+    // differ the moment this charge outlives a redeploy that changed a
+    // price, and a durable store means it can. `charge.price` is only
+    // absent for a charge written before that snapshot existed, and falls
+    // back to the current table exactly as every charge did before it did.
+    const price = charge.price ?? this.#prices.get(charge.sku);
     if (!price) throw new Error(`charge ${charge.nonce} references unknown sku ${charge.sku}`);
 
     const received = link.receivedAmount ?? null;

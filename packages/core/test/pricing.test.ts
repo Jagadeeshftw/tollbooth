@@ -4,10 +4,12 @@ import { describe, it } from 'node:test';
 import { compareDecimal, decimalGte, parseDecimal, toFixedScale } from '../src/decimal.js';
 import {
   MIN_CREDIT_PACK_AMOUNT,
+  assertPriceFloor,
   definePrice,
   entitlementFromPrice,
   isUsable,
 } from '../src/pricing.js';
+import type { Price } from '../src/types.js';
 
 describe('the three units collapse to one record', () => {
   it('per_call is remaining 1, no expiry', () => {
@@ -172,5 +174,49 @@ describe('decimal money', () => {
     for (const bad of ['', '  ', 'abc', '1.2.3', '1e5', 'NaN', '0x10']) {
       assert.throws(() => parseDecimal(bad), /Invalid decimal/, `should reject ${bad}`);
     }
+  });
+});
+
+describe('assertPriceFloor', () => {
+  it('accepts a credit pack built through definePrice, which already enforced it', () => {
+    const p = definePrice({ sku: 'x', unit: 'credit_pack', amount: MIN_CREDIT_PACK_AMOUNT, credits: 10 });
+    assert.doesNotThrow(() => assertPriceFloor(p));
+  });
+
+  it('rejects a below-floor credit pack regardless of how it was built', () => {
+    // Built by hand, bypassing definePrice entirely — the exact shape a
+    // remote price source could produce without ever calling definePrice.
+    const handBuilt: Price = {
+      sku: 'cheap',
+      unit: 'credit_pack',
+      amount: '0.10',
+      currency: 'USDC',
+      credits: 5,
+      ttlMs: null,
+      label: 'cheap',
+    };
+    assert.throws(() => assertPriceFloor(handBuilt), /below the 5\.00 minimum/);
+  });
+
+  it("does not trust a definePrice({ allowBelowMinimum: true }) price either", () => {
+    // definePrice's escape hatch leaves no trace on the Price it returns, so
+    // assertPriceFloor cannot tell this apart from one nobody ever validated
+    // — which is exactly the point: the bypass is consumed at construction,
+    // not carried by the object.
+    const trial = definePrice({
+      sku: 'trial',
+      unit: 'credit_pack',
+      amount: '1.00',
+      credits: 25,
+      allowBelowMinimum: true,
+    });
+    assert.throws(() => assertPriceFloor(trial), /below the 5\.00 minimum/);
+  });
+
+  it('never applies to per_call or time_pass, which have no floor', () => {
+    const perCall = definePrice({ sku: 'x', unit: 'per_call', amount: '0.01' });
+    const pass = definePrice({ sku: 'y', unit: 'time_pass', amount: '0.01', ttlMs: 1000 });
+    assert.doesNotThrow(() => assertPriceFloor(perCall));
+    assert.doesNotThrow(() => assertPriceFloor(pass));
   });
 });

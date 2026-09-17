@@ -86,6 +86,7 @@ export function charge(over: Partial<Charge> = {}): Charge {
     subject: SUBJECT,
     sku: 'search',
     amount: '10.00',
+    price: PACK,
     status: 'pending',
     providerRef: 'pl_1',
     checkoutUrl: 'https://www.moove.xyz/pay/pl_1',
@@ -354,6 +355,24 @@ export function runStoreConformance(harness: StoreHarness): void {
     it('returns undefined for a nonce it never saw', async () => {
       const store = await make();
       assert.equal(await store.getCharge('never'), undefined);
+    });
+
+    it('round-trips the price snapshot, and a null one for a pre-migration charge', async () => {
+      const store = await make();
+      await store.putCharge(charge({ nonce: 'snapshotted' }));
+      const withSnapshot = await store.getCharge('snapshotted');
+      assert.deepEqual(
+        withSnapshot?.price,
+        PACK,
+        'the exact price this charge was opened against must survive, not a lookup by sku'
+      );
+
+      await store.putCharge(charge({ nonce: 'legacy', price: null }));
+      assert.equal(
+        (await store.getCharge('legacy'))?.price,
+        null,
+        'a charge written before the snapshot existed must read back as null, not throw or invent one'
+      );
     });
   });
 
