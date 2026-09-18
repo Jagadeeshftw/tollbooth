@@ -91,6 +91,7 @@ export class GatewayDatabase {
 
   async #boot(): Promise<void> {
     await this.#assertNotSuperuser();
+    await this.#assertNotEntitlementStore();
     await this.#runMigrations();
   }
 
@@ -115,6 +116,36 @@ export class GatewayDatabase {
           'GatewayDatabase refuses to run as a Postgres superuser or a role with BYPASSRLS: ' +
             'row-level security is unconditionally bypassed for both, which would make every ' +
             'tenant-isolation policy in this schema silently do nothing. Use an ordinary role.'
+        );
+      }
+    });
+  }
+
+  /**
+   * `GatewayDatabase` never reads `DATABASE_URL` or any other env var itself —
+   * its connection string is always constructor-injected — but nothing stops
+   * an operator from pointing `GATEWAY_DATABASE_URL` at that same value by
+   * mistake. Nothing about this schema would collide if that happened:
+   * `gateway_*` table names don't clash with `@tollbooth/store-postgres`'s
+   * `tollbooth_*` tables, so migrations would apply cleanly and silently
+   * leave gateway schema sitting inside a tenant's entitlement store. The
+   * `tollbooth_%` prefix belongs exclusively to that other package's schema,
+   * so its presence is unambiguous: refuse to boot rather than find out this
+   * way.
+   */
+  async #assertNotEntitlementStore(): Promise<void> {
+    await this.#withClient(async (client) => {
+      const { rows } = await client.query<{ found: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM information_schema.tables
+           WHERE table_schema = 'public' AND table_name LIKE 'tollbooth\\_%' ESCAPE '\\'
+         ) AS found`
+      );
+      if (rows[0]?.found) {
+        throw new Error(
+          'GatewayDatabase refuses to run against a database that already holds tollbooth_* tables: ' +
+            "that is a tenant entitlement store's schema, a different trust domain. " +
+            'GATEWAY_DATABASE_URL must point at the gateway\'s own, separate Neon project — never DATABASE_URL.'
         );
       }
     });
