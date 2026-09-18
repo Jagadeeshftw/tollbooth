@@ -19,11 +19,11 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
-    "@tollbooth/core": "0.0.1",
-    "@tollbooth/mcp": "0.0.1",
-    "@tollbooth/moove": "0.0.1",
-    "@tollbooth/store-sqlite": "0.0.1",
+    "@tollbooth/core": "0.1.0",
+    "@tollbooth/mcp": "0.1.0",
+    "@tollbooth/moove": "0.1.0",
+    "@tollbooth/store-sqlite": "0.1.0",
     "zod": "^3.24.1",
-    "@tollbooth/store-postgres": "0.0.1"
+    "@tollbooth/store-postgres": "0.1.0"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@tollbooth/core",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "The Tollbooth entitlement model. No payment provider, no MCP.",
   "license": "MIT",
   "type": "module",

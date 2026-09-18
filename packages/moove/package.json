@@ -1,6 +1,6 @@
 {
   "name": "@tollbooth/moove",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Moove payment-provider binding for Tollbooth.",
   "license": "MIT",
   "type": "module",
@@ -14,5 +14,5 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test test/*.test.ts"
   },
-  "dependencies": { "@tollbooth/core": "0.0.1" }
+  "dependencies": { "@tollbooth/core": "0.1.0" }
 }

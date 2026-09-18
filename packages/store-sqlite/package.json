@@ -1,6 +1,6 @@
 {
   "name": "@tollbooth/store-sqlite",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Durable SQLite entitlement store for Tollbooth. The production default.",
   "license": "MIT",
   "type": "module",
@@ -24,7 +24,7 @@
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@tollbooth/core": "0.0.1",
+    "@tollbooth/core": "0.1.0",
     "better-sqlite3": "^11.7.0"
   },
   "devDependencies": {
