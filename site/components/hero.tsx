@@ -6,7 +6,10 @@ import { Heading } from "./heading";
 import { SubHeading } from "./subheading";
 import { Button } from "./button";
 import { Badge } from "./badge";
+import { CopyButton } from "./docs/copy-button";
 import { REPO, WRITEUP, trials } from "@/content/measurements";
+
+const INSTALL = "npm install @tollbooth/mcp";
 
 const structured = trials.shapes[0];
 const text = trials.shapes[1];
@@ -20,6 +23,17 @@ export const Hero = () => (
       Agents come back after a payment challenge.{" "}
       <span className="text-brand">We measured it.</span>
     </Heading>
+
+    <div className="mt-6 flex items-center gap-2 rounded-lg border border-divide bg-gray-100 px-4 py-2 font-mono text-sm text-charcoal-900 dark:bg-neutral-900 dark:text-neutral-200">
+      <span aria-hidden className="text-gray-500 dark:text-neutral-500">
+        $
+      </span>
+      <span>{INSTALL}</span>
+      <CopyButton text={INSTALL} />
+    </div>
+    <p className="mt-2 text-xs text-gray-600 dark:text-neutral-400">
+      A paywall library for your MCP server — not a hosted service you route calls through.
+    </p>
 
     <SubHeading as="p" className="mx-auto mt-6 max-w-2xl text-base lg:text-lg">
       In {trials.scored} blind trials, agents retried the tool after the user paid{" "}
