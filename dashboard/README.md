@@ -46,10 +46,24 @@ npm run dev --workspace=@tollbooth/dashboard
 `GatewayDatabase` runs its own migrations on first connection and refuses to boot against a
 Postgres superuser or a `BYPASSRLS` role — see `@tollbooth/gateway-server`'s own README for why.
 
+## Running the tests
+
+```bash
+TOLLBOOTH_DASHBOARD_TEST_POSTGRES_URL=postgresql://... \
+npm run test --workspace=@tollbooth/dashboard
+```
+
+Needs the same non-superuser, non-`BYPASSRLS` role as `@tollbooth/gateway-server`'s own suite (see
+that package's `test/helpers.ts`) — pointed at its own throwaway database, never `DATABASE_URL` or
+`GATEWAY_DATABASE_URL`, since this truncates every gateway table on each run. `pretest` runs a real
+production build first; the tests then spawn a real `next start` server and talk to it over HTTP —
+`cookies()` needs the request context only a running server provides, so nothing here calls route
+handlers directly. Covers the auth gate (unauthenticated and tampered-cookie requests redirect to
+`/login`; a valid session reaches `/` and `/tokens`) and `/api/ingest` (missing/invalid bearer token,
+a valid batch, and a byte-for-byte replayed batch reporting fully duplicate rather than being
+double-counted).
+
 ## What isn't built yet
 
 - Revenue and Usage detail pages, and Settings — stubbed in the sidebar, not designed.
-- No automated test suite for this app specifically (the backend it calls,
-  `@tollbooth/gateway-server`, has full coverage; this app was verified manually — a real
-  seeded database, real GitHub-shaped session cookies, real Server Action round trips,
-  screenshotted at 1440 and 390 in both themes — but that verification does not run in CI).
+- The test suite above isn't wired into CI yet.
