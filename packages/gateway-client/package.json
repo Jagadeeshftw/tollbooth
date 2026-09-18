@@ -1,6 +1,6 @@
 {
   "name": "@tollbooth/gateway-client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Opt-in telemetry client for the Tollbooth hosted gateway. Not required to use Tollbooth.",
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/Jagadeeshftw/tollbooth.git", "directory": "packages/gateway-client" },
@@ -17,5 +17,5 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test test/*.test.ts"
   },
-  "dependencies": { "@tollbooth/core": "0.1.0" }
+  "dependencies": { "@tollbooth/core": "0.1.1" }
 }

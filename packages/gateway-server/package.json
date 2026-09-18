@@ -15,9 +15,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts"
   },
-  "dependencies": { "@tollbooth/gateway-client": "0.1.0", "pg": "^8.13.1" },
+  "dependencies": { "@tollbooth/gateway-client": "0.1.1", "pg": "^8.13.1" },
   "devDependencies": {
-    "@tollbooth/core": "0.1.0",
+    "@tollbooth/core": "0.1.1",
     "@types/pg": "^8.11.10"
   }
 }

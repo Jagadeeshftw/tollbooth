@@ -1,6 +1,6 @@
 {
   "name": "@tollbooth/mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP binding for Tollbooth: withPaywall and paidTool.",
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/Jagadeeshftw/tollbooth.git", "directory": "packages/mcp" },
@@ -27,7 +27,7 @@
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {
-    "@tollbooth/core": "0.1.0",
+    "@tollbooth/core": "0.1.1",
     "zod": "^3.24.1"
   },
   "peerDependencies": {
