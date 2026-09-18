@@ -354,6 +354,70 @@ describe('the price snapshot', () => {
       'a charge with no snapshot must fall back to the live price table, exactly as before this existed'
     );
   });
+
+  describe('a remote config edit landing mid-payment', () => {
+    it('grants exactly what the buyer was shown, not the price a remote edit changed it to while the link was open', async () => {
+      const { state, store, provider } = setup(); // PACK: $10.00, 250 credits
+      const { charge } = await provider.openCharge({ sku: 'search', subject: 'tb_s_1' });
+      assert.deepEqual(charge.price, PACK, 'the checkout the buyer sees is built from this snapshot');
+
+      // The tenant edits the pack — through the dashboard, propagated by
+      // GatewayClient#syncPrices — while the buyer's payment is still in
+      // flight. This is exactly `applyRemoteConfig`, called directly here
+      // the way a config-sync tick would call it.
+      const repriced = provider.applyRemoteConfig([
+        { sku: 'search', amount: '20.00', credits: 500, ttlMs: null, label: 'v2' },
+      ]);
+      assert.deepEqual(repriced.applied, ['search'], 'the edit itself must succeed — it is a legitimate, in-range price');
+      assert.deepEqual(provider.priceFor('search'), {
+        sku: 'search',
+        unit: 'credit_pack',
+        currency: 'USDC',
+        amount: '20.00',
+        credits: 500,
+        ttlMs: null,
+        label: 'v2',
+      });
+
+      // The buyer pays exactly what the old link asked for.
+      state.status = 'completed';
+      state.receivedAmount = '10.00';
+      const outcome = await provider.settleCharge(charge.nonce, { force: true });
+
+      // The sharpest possible check: if settlement read the live table
+      // instead of the snapshot, $10.00 against a $20.00 ask lands in the
+      // pro-rata zone (or below the floor), not granted-in-full — a wrong
+      // implementation fails this on the settlement zone before it even
+      // gets to counting credits.
+      assert.equal(outcome.status, 'granted', '$10.00 against the $10.00 it was actually opened for is a full payment');
+      const [entitlement] = await store.listEntitlements('tb_s_1');
+      assert.equal(entitlement?.remaining, 250, 'the original 250 credits, never the repriced 500');
+
+      // The next buyer, opening a fresh charge, gets the new price — the
+      // edit was real, it just could not reach back into flight.
+      const { charge: nextCharge } = await provider.openCharge({ sku: 'search', subject: 'tb_s_2' });
+      assert.equal(nextCharge.price?.amount, '20.00');
+    });
+
+    it('still grants the old price when the config edit lands between two settlement polls, not just before the first', async () => {
+      const { state, store, provider } = setup();
+      const { charge } = await provider.openCharge({ sku: 'search', subject: 'tb_s_1' });
+
+      // First poll: still unpaid.
+      assert.equal((await provider.settleCharge(charge.nonce, { force: true })).status, 'pending');
+
+      // The edit lands in the gap between polls — after the charge opened
+      // and after at least one poll already observed it pending.
+      provider.applyRemoteConfig([{ sku: 'search', amount: '1.00', credits: 10, ttlMs: null, label: 'v2' }]);
+
+      // Second poll: now paid, at the original price.
+      state.status = 'completed';
+      state.receivedAmount = '10.00';
+      const outcome = await provider.settleCharge(charge.nonce, { force: true });
+      assert.equal(outcome.status, 'granted');
+      assert.equal((await store.listEntitlements('tb_s_1'))[0]?.remaining, 250);
+    });
+  });
 });
 
 describe('the local price floor', () => {
@@ -421,6 +485,96 @@ describe('the local price floor', () => {
           allowBelowMinimum: ['some-other-sku'],
         })
     );
+  });
+
+  describe('applyRemoteConfig — the gateway is trusted for convenience, never for correctness', () => {
+    it('refuses a remote price below the floor, and leaves the sku selling at its old price', () => {
+      const { provider } = setup(); // PACK: $10.00, not exempt
+
+      const result = provider.applyRemoteConfig([
+        { sku: 'search', amount: '0.10', credits: 5, ttlMs: null, label: 'clearance' },
+      ]);
+
+      assert.deepEqual(result.applied, []);
+      assert.equal(result.rejected.length, 1);
+      assert.equal(result.rejected[0]?.sku, 'search');
+      assert.match(result.rejected[0]?.reason ?? '', /below the 5\.00 minimum/);
+      assert.deepEqual(provider.priceFor('search'), PACK, 'the old, valid price must still be what a new charge opens against');
+    });
+
+    it('a hostile payload cannot exempt itself from the floor — allowBelowMinimum is not a field this seam reads at all', () => {
+      const { provider } = setup();
+
+      // TypeScript would refuse this shape at compile time; a real gateway
+      // response is untyped JSON, so exercise exactly what a hostile or
+      // buggy server could actually send over the wire.
+      const hostile = {
+        sku: 'search',
+        amount: '0.01',
+        credits: 5,
+        ttlMs: null,
+        label: 'free',
+        allowBelowMinimum: true,
+      };
+      const result = provider.applyRemoteConfig([hostile as unknown as { sku: string; amount: string; credits: number | null; ttlMs: number | null; label: string }]);
+
+      assert.deepEqual(result.applied, []);
+      assert.equal(result.rejected[0]?.sku, 'search');
+      assert.deepEqual(provider.priceFor('search'), PACK);
+    });
+
+    it('cannot invent a sku the provider does not already sell locally', () => {
+      const { provider } = setup();
+
+      const result = provider.applyRemoteConfig([
+        { sku: 'never-registered', amount: '1.00', credits: 10, ttlMs: null, label: 'new' },
+      ]);
+
+      assert.deepEqual(result.applied, []);
+      assert.deepEqual(result.ignored, ['never-registered']);
+      assert.equal(provider.priceFor('never-registered'), undefined, 'a remote payload cannot bring a new sku into existence');
+    });
+
+    it('cannot change unit or currency — only amount, credits, ttl and label are remotely tunable', () => {
+      const { provider } = setup();
+
+      provider.applyRemoteConfig([{ sku: 'search', amount: '15.00', credits: 300, ttlMs: 1000, label: 'v2' }]);
+
+      const updated = provider.priceFor('search');
+      assert.equal(updated?.unit, 'credit_pack', 'unit is not a field RemotePriceUpdate even carries — it always comes from the existing price');
+      assert.equal(updated?.currency, 'USDC', 'same for currency');
+      assert.equal(updated?.amount, '15.00', 'amount, credits, ttlMs and label are the only tunable fields');
+      assert.equal(updated?.credits, 300);
+    });
+
+    it('does not touch an already-open charge — only a future openCharge reads the updated table', async () => {
+      const { store, provider } = setup();
+      const { charge: before } = await provider.openCharge({ sku: 'search', subject: 'tb_s_1' });
+
+      provider.applyRemoteConfig([{ sku: 'search', amount: '99.00', credits: 1, ttlMs: null, label: 'v2' }]);
+
+      const reread = await store.getCharge(before.nonce);
+      assert.deepEqual(reread?.price, PACK, "an already-open charge's snapshot is immutable — applyRemoteConfig has no path back to it");
+    });
+
+    it('a sku the provider itself named exempt stays exempt for a remote edit too, but nothing else does', () => {
+      const { client } = stubMoove();
+      const trial = definePrice({ sku: 'trial', unit: 'credit_pack', amount: '1.00', credits: 25, allowBelowMinimum: true });
+      const provider = new MooveProvider({
+        client,
+        store: new MemoryEntitlementStore(),
+        prices: [trial, PACK],
+        allowBelowMinimum: ['trial'],
+      });
+
+      const result = provider.applyRemoteConfig([
+        { sku: 'trial', amount: '0.10', credits: 2, ttlMs: null, label: 'cheaper trial' },
+        { sku: 'search', amount: '0.10', credits: 2, ttlMs: null, label: 'clearance' },
+      ]);
+
+      assert.deepEqual(result.applied, ['trial'], 'the sku the tenant\'s own deployed code named exempt can reprice below the floor');
+      assert.deepEqual(result.rejected.map((r) => r.sku), ['search'], 'every other sku is still held to the floor');
+    });
   });
 });
 

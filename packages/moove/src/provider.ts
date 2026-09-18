@@ -26,6 +26,28 @@ import type {
 import type { MooveClient, MoovePaymentLink } from './client.js';
 import { isTerminalStatus, shouldPoll } from './poller.js';
 
+/**
+ * Structurally identical to `@tollbooth/gateway-client`'s `RemotePriceUpdate`
+ * and `RemoteConfigApplyResult` — defined independently here rather than
+ * imported, because this package's allowed dependencies are `@tollbooth/core`
+ * only (`scripts/check-boundaries.mjs`). A tenant wiring `GatewayClient`
+ * against a `MooveProvider` gets structural type-checking for free; neither
+ * package needs to know the other exists for that to work.
+ */
+export interface RemotePriceUpdateLike {
+  readonly sku: Sku;
+  readonly amount: string;
+  readonly credits: number | null;
+  readonly ttlMs: number | null;
+  readonly label: string;
+}
+
+export interface RemoteConfigApplyResultLike {
+  readonly applied: readonly Sku[];
+  readonly rejected: readonly { sku: Sku; reason: string }[];
+  readonly ignored: readonly Sku[];
+}
+
 /** Prefix on the Moove `description` field that binds a payment to a charge. */
 export const NONCE_PREFIX = 'tb_';
 
@@ -78,6 +100,12 @@ export class MooveProvider implements PaymentProvider {
   readonly #client: MooveClient;
   readonly #store: EntitlementStore;
   readonly #prices: Map<Sku, Price>;
+  /**
+   * Fixed at construction, from code the tenant deploys — never touched
+   * again. `applyRemoteConfig` reads this same set and never writes it: a
+   * remote payload has no field that could add itself here.
+   */
+  readonly #exempt: ReadonlySet<Sku>;
   readonly #chargeTtlMs: number;
   readonly #policy: SettlementPolicy;
   readonly #subjectTtlMs: number | undefined;
@@ -91,6 +119,7 @@ export class MooveProvider implements PaymentProvider {
     // Local, not trusting: the price object's own history is not consulted,
     // only whether the tenant's own deployed code named this sku exempt.
     const exempt = new Set(options.allowBelowMinimum ?? []);
+    this.#exempt = exempt;
     for (const price of options.prices) {
       if (!exempt.has(price.sku)) assertPriceFloor(price);
     }
@@ -117,6 +146,63 @@ export class MooveProvider implements PaymentProvider {
 
   listPrices(): Price[] {
     return [...this.#prices.values()];
+  }
+
+  /**
+   * Structurally matches `@tollbooth/gateway-client`'s `RemoteConfigurable` —
+   * see that package's own doc comment for the full trust boundary this
+   * implements. Never imported from there directly: this package's allowed
+   * dependencies are `@tollbooth/core` only, enforced by
+   * `scripts/check-boundaries.mjs`.
+   *
+   * Only tunes `amount`, `credits`, `ttlMs` and `label` of a sku this
+   * provider already sells; `sku`, `unit` and `currency` always come from
+   * the existing local price, never from `updates` — a remote payload has
+   * no way to change what is being sold, only what it costs. Every
+   * resulting candidate is re-validated against the local floor exactly as
+   * if it had arrived through the constructor, using the same exemption set
+   * fixed there — a remote payload has no field that could exempt itself.
+   *
+   * Applying nothing to `this.#prices` for a rejected or ignored sku is the
+   * entire "never below the floor, never a fabricated sku" guarantee: there
+   * is no code path here that writes an unvalidated price.
+   */
+  applyRemoteConfig(updates: readonly RemotePriceUpdateLike[]): RemoteConfigApplyResultLike {
+    const applied: Sku[] = [];
+    const rejected: { sku: Sku; reason: string }[] = [];
+    const ignored: Sku[] = [];
+
+    for (const update of updates) {
+      const current = this.#prices.get(update.sku);
+      if (!current) {
+        ignored.push(update.sku);
+        continue;
+      }
+
+      const candidate: Price = {
+        sku: current.sku,
+        unit: current.unit,
+        currency: current.currency,
+        amount: update.amount,
+        credits: update.credits,
+        ttlMs: update.ttlMs,
+        label: update.label,
+      };
+
+      if (!this.#exempt.has(update.sku)) {
+        try {
+          assertPriceFloor(candidate);
+        } catch (error) {
+          rejected.push({ sku: update.sku, reason: error instanceof Error ? error.message : String(error) });
+          continue;
+        }
+      }
+
+      this.#prices.set(update.sku, candidate);
+      applied.push(update.sku);
+    }
+
+    return { applied, rejected, ignored };
   }
 
   /** Mint a fresh subject handle and persist its sliding window. */

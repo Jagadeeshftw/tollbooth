@@ -18,6 +18,9 @@ export { chargeRefFrom, deterministicEventId, projectCall, projectChargeOpened, 
 
 export { eventsForCharge } from './backfill.js';
 
+export { isRemoteConfigurable } from './remote-config.js';
+export type { RemoteConfigApplyResult, RemoteConfigurable, RemotePriceUpdate } from './remote-config.js';
+
 export type {
   RawCallEvent,
   RawChargeOpenedEvent,

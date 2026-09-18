@@ -6,6 +6,7 @@ import { eventsForCharge } from './backfill.js';
 import { backoffDelayMs } from './backoff.js';
 import type { RawCallEvent, RawChargeOpenedEvent, WireEvent } from './events.js';
 import { projectCall, projectChargeOpened, projectSettlement } from './project.js';
+import type { RemoteConfigApplyResult, RemoteConfigurable, RemotePriceUpdate } from './remote-config.js';
 
 export interface BackfillOptions {
   /** Must match the tenant's actual `PaymentProvider` configuration — see `eventsForCharge`. */
@@ -30,6 +31,14 @@ export interface GatewayClientOptions {
   endpoint: string;
   /** A write-only ingest token for this tenant. Never the Moove key. */
   ingestToken: string;
+  /**
+   * Where to pull remote price config from, for `startConfigSync`. Defaults
+   * to `endpoint` with its final `/ingest` path segment replaced by
+   * `/config` — the sibling route under the same dashboard deployment.
+   * Irrelevant unless `startConfigSync` is actually called: nothing reaches
+   * this URL otherwise.
+   */
+  configEndpoint?: string;
   /** How often the background timer flushes. Default 5000ms. */
   flushIntervalMs?: number;
   /** Events sent per request. Default 50. */
@@ -48,6 +57,10 @@ export interface GatewayClientOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Called whenever events are dropped — by the queue bound, or after exhausting retries. */
   onDropped?: (events: readonly WireEvent[], error: unknown) => void;
+  /** Called after every successful config sync tick — including a rejection, which is never silent. */
+  onConfigApplied?: (result: RemoteConfigApplyResult) => void;
+  /** Called when a config sync tick fails to reach the gateway at all. The provider keeps whatever it already had. */
+  onConfigSyncError?: (error: unknown) => void;
 }
 
 /**
@@ -75,6 +88,7 @@ export interface GatewayClientOptions {
  */
 export class GatewayClient {
   readonly #endpoint: string;
+  readonly #configEndpoint: string;
   readonly #ingestToken: string;
   readonly #flushIntervalMs: number;
   readonly #maxBatchSize: number;
@@ -84,15 +98,19 @@ export class GatewayClient {
   readonly #now: () => number;
   readonly #sleep: (ms: number) => Promise<void>;
   readonly #onDropped: ((events: readonly WireEvent[], error: unknown) => void) | undefined;
+  readonly #onConfigApplied: ((result: RemoteConfigApplyResult) => void) | undefined;
+  readonly #onConfigSyncError: ((error: unknown) => void) | undefined;
 
   #queue: WireEvent[] = [];
   #timer: ReturnType<typeof setInterval> | undefined;
   #flushing: Promise<void> | undefined;
+  #configTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(options: GatewayClientOptions) {
     if (!options.endpoint) throw new Error('GatewayClient requires an endpoint');
     if (!options.ingestToken) throw new Error('GatewayClient requires an ingestToken');
     this.#endpoint = options.endpoint;
+    this.#configEndpoint = options.configEndpoint ?? options.endpoint.replace(/\/ingest$/, '/config');
     this.#ingestToken = options.ingestToken;
     this.#flushIntervalMs = options.flushIntervalMs ?? 5000;
     this.#maxBatchSize = options.maxBatchSize ?? 50;
@@ -102,6 +120,8 @@ export class GatewayClient {
     this.#now = options.now ?? Date.now;
     this.#sleep = options.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
     this.#onDropped = options.onDropped;
+    this.#onConfigApplied = options.onConfigApplied;
+    this.#onConfigSyncError = options.onConfigSyncError;
   }
 
   /** How many projected events are queued, waiting to be sent. For tests and health checks. */
@@ -229,6 +249,54 @@ export class GatewayClient {
       if (attempt < this.#maxAttempts - 1) await this.#sleep(backoffDelayMs(attempt));
     }
     throw lastError ?? new Error('gateway ingest failed for an unknown reason');
+  }
+
+  /**
+   * Start periodically pulling remote price config and applying it to
+   * `provider`. Entirely separate from `start()`/`stop()`'s telemetry
+   * timer — a tenant can send telemetry without ever opting into remote
+   * config, or the reverse.
+   *
+   * A fetch failure — the gateway unreachable, mid-outage or otherwise —
+   * skips this tick silently to `onConfigSyncError` and leaves `provider`
+   * exactly as it was: whatever it last successfully applied, or its own
+   * local static prices if this has never once succeeded. That is the
+   * entire "last-known-good" mechanism — there is no separate cache to go
+   * stale, because the provider's own price table already *is* the cache.
+   */
+  startConfigSync(provider: RemoteConfigurable, options: { intervalMs?: number } = {}): void {
+    if (this.#configTimer) return;
+    const intervalMs = options.intervalMs ?? 60_000;
+    void this.syncPricesOnce(provider);
+    this.#configTimer = setInterval(() => {
+      void this.syncPricesOnce(provider);
+    }, intervalMs);
+    this.#configTimer.unref?.();
+  }
+
+  stopConfigSync(): void {
+    if (this.#configTimer) {
+      clearInterval(this.#configTimer);
+      this.#configTimer = undefined;
+    }
+  }
+
+  /** One fetch-and-apply cycle. Exposed directly so a caller can trigger a sync on demand, or a test can await one deterministically. */
+  async syncPricesOnce(provider: RemoteConfigurable): Promise<void> {
+    let updates: readonly RemotePriceUpdate[];
+    try {
+      const res = await this.#fetch(this.#configEndpoint, {
+        headers: { authorization: `Bearer ${this.#ingestToken}` },
+      });
+      if (!res.ok) throw new Error(`gateway config responded HTTP ${res.status}`);
+      const body = (await res.json()) as { prices: RemotePriceUpdate[] };
+      updates = body.prices;
+    } catch (error) {
+      this.#onConfigSyncError?.(error);
+      return;
+    }
+    const result = provider.applyRemoteConfig(updates);
+    this.#onConfigApplied?.(result);
   }
 
   async #doFlush(): Promise<void> {
