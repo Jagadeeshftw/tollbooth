@@ -60,9 +60,27 @@ export async function authenticateIngestToken(
   });
 }
 
-export async function revokeIngestToken(db: GatewayDatabase, tokenId: string, now: () => number = Date.now): Promise<void> {
-  await db.withoutTenant(async (client) => {
-    await client.query('UPDATE gateway_ingest_tokens SET revoked_at = $1 WHERE id = $2', [now(), tokenId]);
+/**
+ * Revoke a token, scoped to the tenant that owns it. `id` alone is a guessable,
+ * observable value (issued to the tenant, shown in dashboard URLs and DOM state),
+ * so this must not trust the caller's `tokenId` in isolation the way an app-layer
+ * pre-check would — the ownership check belongs here, not only above it. Returns
+ * `false` (rather than throwing) when the id doesn't exist or belongs to a
+ * different tenant, so callers can't distinguish the two and learn anything about
+ * other tenants' tokens.
+ */
+export async function revokeIngestToken(
+  db: GatewayDatabase,
+  tenantId: string,
+  tokenId: string,
+  now: () => number = Date.now
+): Promise<boolean> {
+  return db.withoutTenant(async (client) => {
+    const { rowCount } = await client.query(
+      'UPDATE gateway_ingest_tokens SET revoked_at = $1 WHERE id = $2 AND tenant_id = $3',
+      [now(), tokenId, tenantId]
+    );
+    return (rowCount ?? 0) > 0;
   });
 }
 

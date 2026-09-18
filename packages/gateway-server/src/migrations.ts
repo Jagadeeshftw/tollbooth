@@ -19,17 +19,51 @@ export interface Migration {
 }
 
 /**
- * `gateway_tenants` and `gateway_ingest_tokens` carry no row-level security.
- * Authenticating a presented ingest token means finding *which* tenant it
- * belongs to — the query has to scan across tenants by construction, before
- * any tenant context exists to scope it to. RLS on these two would make that
- * lookup return nothing. Application code filters them by an explicit
- * `WHERE tenant_id = $1` instead, in the handful of narrow queries that touch
- * them post-authentication. Row-level security is the enforced, tested
- * guarantee for the tables that actually hold a tenant's operational data —
- * `gateway_charges`, `gateway_calls`, `gateway_ingested_events` and
- * `gateway_daily_rollups` — which is what the dashboard reads from and what
- * "no tenant can read another's rows" is actually about.
+ * Written justification: why `gateway_tenants` and `gateway_ingest_tokens`
+ * carry no row-level security, when every other tenant-scoped table does.
+ *
+ * The reason is structural, not a shortcut. RLS in this schema means
+ * `current_setting('app.tenant_id', true)` — a tenant context that has to
+ * already exist. `gateway_ingest_tokens` is read by `authenticateIngestToken`
+ * to *establish* that context: given only a presented token, the query must
+ * find which tenant (if any) it belongs to, which means scanning by hash
+ * across all tenants before any `app.tenant_id` can be set. RLS on that table
+ * would make the lookup that creates tenant context always return zero rows —
+ * it would not fail safe, it would fail total. The same is true of
+ * `gateway_tenants`: GitHub sign-in resolves an external identity to a
+ * tenant id before that id exists as a session value to scope by.
+ *
+ * Because there is no RLS backstop, every statement that touches these two
+ * tables (`packages/gateway-server/src/tokens.ts`, `tenants.ts`) has been
+ * individually audited for tenant scoping instead, and each is one of:
+ *
+ *   - Scoped by an explicit `WHERE tenant_id = $1` bound to the caller's own,
+ *     already-authenticated tenant id (`listTenantIngestTokens`, the insert
+ *     in `issueTenantIngestToken`, `revokeIngestToken`).
+ *   - Looked up by token hash or GitHub user id — values that are either
+ *     cryptographically unguessable (a token hash) or bound to an external,
+ *     already-verified identity (a GitHub id from a validated OAuth
+ *     callback) — with the row's own hash re-verified in constant time
+ *     before anything is trusted (`authenticateIngestToken`).
+ *   - An update keyed by a row id taken from that same successful lookup,
+ *     never from caller input (`authenticateIngestToken`'s `last_used_at`
+ *     touch).
+ *
+ * `revokeIngestToken` in particular takes both a `tenantId` and a `tokenId`
+ * and scopes its `UPDATE` by both, returning whether a row actually matched
+ * rather than throwing — so a token id belonging to a different tenant and
+ * one that never existed are indistinguishable to the caller. See
+ * `test/tokens.test.ts`'s `revokeIngestToken` suite for the cross-tenant
+ * case this proves.
+ *
+ * Row-level security remains the enforced, tested guarantee for the tables
+ * that hold a tenant's actual operational data — `gateway_charges`,
+ * `gateway_calls`, `gateway_ingested_events` and `gateway_daily_rollups` —
+ * which is what the dashboard reads from and what "no tenant can read
+ * another's rows" is actually about. `gateway_tenants` and
+ * `gateway_ingest_tokens` hold identity and credential metadata, not tenant
+ * operational data, and are the two tables whose whole purpose is to be
+ * reachable *before* a tenant is known.
  */
 export const MIGRATIONS: readonly Migration[] = [
   {
