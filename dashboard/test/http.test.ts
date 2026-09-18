@@ -4,7 +4,14 @@ import type { ChildProcess } from 'node:child_process';
 import { after, before, describe, it } from 'node:test';
 
 import type { WireChargeOpenedEvent } from '@tollbooth/gateway-client';
-import { GatewayDatabase, issueSession, issueTenantIngestToken, upsertTenantForGithubUser } from '@tollbooth/gateway-server';
+import {
+  GatewayDatabase,
+  ingestBatch,
+  issueSession,
+  issueTenantIngestToken,
+  setPriceConfig,
+  upsertTenantForGithubUser,
+} from '@tollbooth/gateway-server';
 
 import { BASE_URL, CONNECTION_STRING, SESSION_SECRET, startDashboardServer, stopDashboardServer } from './helpers.js';
 
@@ -56,6 +63,20 @@ if (!CONNECTION_STRING) {
     return `tb_session=${issueSession(tenantId, SESSION_SECRET)}`;
   }
 
+  function chargeOpened(over: Partial<WireChargeOpenedEvent> = {}): WireChargeOpenedEvent {
+    return {
+      kind: 'charge_opened',
+      eventId: randomUUID(),
+      at: Date.now(),
+      tool: 'lookup_market_data',
+      sku: 'search',
+      chargeRef: 'a'.repeat(64),
+      amount: '10.00',
+      currency: 'USDC',
+      ...over,
+    };
+  }
+
   describe('the auth gate', () => {
     it('redirects an unauthenticated request for / to /login', async () => {
       const res = await fetch(`${BASE_URL}/`, { redirect: 'manual' });
@@ -91,20 +112,6 @@ if (!CONNECTION_STRING) {
   });
 
   describe('/api/ingest', () => {
-    function chargeOpened(over: Partial<WireChargeOpenedEvent> = {}): WireChargeOpenedEvent {
-      return {
-        kind: 'charge_opened',
-        eventId: randomUUID(),
-        at: Date.now(),
-        tool: 'lookup_market_data',
-        sku: 'search',
-        chargeRef: 'a'.repeat(64),
-        amount: '10.00',
-        currency: 'USDC',
-        ...over,
-      };
-    }
-
     it('rejects a request with no bearer token', async () => {
       const res = await fetch(`${BASE_URL}/api/ingest`, {
         method: 'POST',
@@ -145,6 +152,44 @@ if (!CONNECTION_STRING) {
       });
       assert.equal(replay.status, 200);
       assert.deepEqual(await replay.json(), { accepted: 0, duplicate: 1 });
+    });
+  });
+
+  describe('/api/config', () => {
+    it('rejects a request with no bearer token', async () => {
+      const res = await fetch(`${BASE_URL}/api/config`);
+      assert.equal(res.status, 401);
+    });
+
+    it('rejects an invalid or unknown token', async () => {
+      const res = await fetch(`${BASE_URL}/api/config`, {
+        headers: { authorization: 'Bearer tbgw_ingest_not_a_real_token' },
+      });
+      assert.equal(res.status, 401);
+    });
+
+    it("serves exactly this tenant's configured prices, and nothing for a sku never configured", async () => {
+      const t = await tenant('config-tenant');
+      const { token } = await issueTenantIngestToken(db, t.id);
+      await ingestBatch(db, t.id, [chargeOpened({ sku: 'search', amount: '10.00' })]);
+      await setPriceConfig(db, t.id, 'config-tenant', { sku: 'search', amount: '12.00', credits: 300, label: 'v2' });
+
+      const res = await fetch(`${BASE_URL}/api/config`, { headers: { authorization: `Bearer ${token}` } });
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { prices: { sku: string; amount: string }[] };
+      assert.deepEqual(body.prices, [{ sku: 'search', amount: '12.00', credits: 300, ttlMs: null, label: 'v2' }]);
+    });
+
+    it('one tenant\'s ingest token can never read another tenant\'s configured prices', async () => {
+      const a = await tenant('config-tenant-a');
+      const b = await tenant('config-tenant-b');
+      await ingestBatch(db, a.id, [chargeOpened({ sku: 'search', amount: '10.00' })]);
+      await setPriceConfig(db, a.id, 'config-tenant-a', { sku: 'search', amount: '99.00' });
+      const { token: bToken } = await issueTenantIngestToken(db, b.id);
+
+      const res = await fetch(`${BASE_URL}/api/config`, { headers: { authorization: `Bearer ${bToken}` } });
+      assert.equal(res.status, 200);
+      assert.deepEqual((await res.json()).prices, []);
     });
   });
 }

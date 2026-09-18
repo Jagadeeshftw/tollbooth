@@ -48,6 +48,9 @@ export type { IssuedIngestToken } from './ingest-tokens.js';
 export { ingestBatch } from './ingest.js';
 export type { IngestResult } from './ingest.js';
 
+export { configAuditLog, effectivePriceCatalog, getPriceConfig, setPriceConfig } from './config.js';
+export type { ConfigAuditEntry, EffectivePriceRow, PriceConfigEdit, PriceConfigRow } from './config.js';
+
 export {
   creditsOutstanding,
   medianTimeToPaySeconds,

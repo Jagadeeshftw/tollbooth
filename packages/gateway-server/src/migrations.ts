@@ -191,6 +191,57 @@ export const MIGRATIONS: readonly Migration[] = [
       `ALTER TABLE gateway_daily_rollups ADD COLUMN IF NOT EXISTS credits_consumed BIGINT NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    id: '0003_price_config',
+    statements: [
+      // What a tenant's own server should be charging, as of the most recent
+      // dashboard edit — never touched by ingest. A tenant's own
+      // GatewayClient#syncPrices pulls this; it never affects a charge
+      // already open, because a provider's applyRemoteConfig has no path
+      // back to a charge's already-written price snapshot. Absence of a row
+      // for a sku means "no remote edit has ever been made" — the tenant's
+      // own local static price table is authoritative until one is.
+      `CREATE TABLE IF NOT EXISTS gateway_price_config (
+         tenant_id  TEXT   NOT NULL REFERENCES gateway_tenants(id),
+         sku        TEXT   NOT NULL,
+         amount     TEXT   NOT NULL,
+         credits    BIGINT,
+         ttl_ms     BIGINT,
+         label      TEXT   NOT NULL,
+         updated_at BIGINT NOT NULL,
+         updated_by TEXT   NOT NULL,
+         PRIMARY KEY (tenant_id, sku)
+       )`,
+      `ALTER TABLE gateway_price_config ENABLE ROW LEVEL SECURITY`,
+      `ALTER TABLE gateway_price_config FORCE ROW LEVEL SECURITY`,
+      `CREATE POLICY gateway_price_config_tenant_isolation ON gateway_price_config
+         USING (tenant_id = current_setting('app.tenant_id', true))
+         WITH CHECK (tenant_id = current_setting('app.tenant_id', true))`,
+
+      // A business record: who changed what, and when — never what a
+      // payer's handle, nonce, link id or wallet was, because a price edit
+      // never involves any of those in the first place. One row per field
+      // actually changed, so "amount: 10.00 -> 12.00" and "label: v1 -> v2"
+      // in the same edit are two legible rows, not one opaque blob.
+      `CREATE TABLE IF NOT EXISTS gateway_config_audit (
+         id         TEXT   PRIMARY KEY,
+         tenant_id  TEXT   NOT NULL REFERENCES gateway_tenants(id),
+         sku        TEXT   NOT NULL,
+         actor      TEXT   NOT NULL,
+         field      TEXT   NOT NULL,
+         old_value  TEXT,
+         new_value  TEXT,
+         changed_at BIGINT NOT NULL
+       )`,
+      `ALTER TABLE gateway_config_audit ENABLE ROW LEVEL SECURITY`,
+      `ALTER TABLE gateway_config_audit FORCE ROW LEVEL SECURITY`,
+      `CREATE POLICY gateway_config_audit_tenant_isolation ON gateway_config_audit
+         USING (tenant_id = current_setting('app.tenant_id', true))
+         WITH CHECK (tenant_id = current_setting('app.tenant_id', true))`,
+      `CREATE INDEX IF NOT EXISTS gateway_config_audit_tenant_changed_at
+         ON gateway_config_audit (tenant_id, changed_at)`,
+    ],
+  },
 ];
 
 export const MIGRATIONS_TABLE = `
