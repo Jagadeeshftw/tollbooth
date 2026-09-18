@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { setImmediate as yieldTick } from 'node:timers/promises';
 import { after, describe, it } from 'node:test';
+import type { TestContext } from 'node:test';
 
 import {
   decideSettlement,
   definePrice,
   entitlementFromPrice,
+  hasChargeFeed,
   issueSubjectRecord,
   slideSubject,
 } from '@tollbooth/core';
@@ -87,6 +89,7 @@ export function charge(over: Partial<Charge> = {}): Charge {
     sku: 'search',
     amount: '10.00',
     price: PACK,
+    tool: 'lookup_market_data',
     status: 'pending',
     providerRef: 'pl_1',
     checkoutUrl: 'https://www.moove.xyz/pay/pl_1',
@@ -373,6 +376,92 @@ export function runStoreConformance(harness: StoreHarness): void {
         null,
         'a charge written before the snapshot existed must read back as null, not throw or invent one'
       );
+    });
+  });
+
+  // ------------------------------------------------------------ charge feed
+  //
+  // Optional — see `hasChargeFeed` in @tollbooth/core. Not every store
+  // implements it, and a store that doesn't must keep compiling and keep
+  // passing every other group above. Detected per test, the same way any
+  // real caller (a backfill tool) would; a store without it shows every test
+  // below as explicitly skipped, in its own name, rather than silently green.
+
+  describe(`${harness.name}: charge feed`, () => {
+    /** Resolves a capable store, or calls `t.skip` and returns undefined. */
+    async function capableStore(t: TestContext) {
+      const store = await make();
+      if (!hasChargeFeed(store)) {
+        t.skip(`${harness.name} does not implement the optional charge feed capability`);
+        return undefined;
+      }
+      return store;
+    }
+
+    it('includes a charge whose creation falls in the window, excludes one that falls outside it', async (t) => {
+      const store = await capableStore(t);
+      if (!store) return;
+      await store.putCharge(charge({ nonce: 'inside', createdAt: 5000 }));
+      await store.putCharge(charge({ nonce: 'before', createdAt: 999 }));
+      await store.putCharge(charge({ nonce: 'after', createdAt: 10_000 }));
+
+      const feed = await store.chargeFeed(1000, 10_000);
+      assert.deepEqual(feed.map((c) => c.nonce), ['inside']);
+    });
+
+    it('includes a charge that opened before the window but settled inside it', async (t) => {
+      const store = await capableStore(t);
+      if (!store) return;
+      await store.putCharge(charge({ nonce: 'late-settle', createdAt: 100 }));
+      await store.updateCharge('late-settle', {
+        status: 'settled',
+        settledAt: 5000,
+        receivedAmount: '10.00',
+      });
+
+      const feed = await store.chargeFeed(1000, 10_000);
+      assert.deepEqual(feed.map((c) => c.nonce), ['late-settle']);
+    });
+
+    it('the window is half-open: [since, until)', async (t) => {
+      const store = await capableStore(t);
+      if (!store) return;
+      await store.putCharge(charge({ nonce: 'at-since', createdAt: 1000 }));
+      await store.putCharge(charge({ nonce: 'at-until', createdAt: 2000 }));
+
+      const feed = await store.chargeFeed(1000, 2000);
+      assert.deepEqual(feed.map((c) => c.nonce), ['at-since']);
+    });
+
+    it('a charge that neither opened nor settled in the window is excluded, even if it exists', async (t) => {
+      const store = await capableStore(t);
+      if (!store) return;
+      await store.putCharge(charge({ nonce: 'untouched', createdAt: 1, expiresAt: 999_999_999 }));
+
+      assert.deepEqual(await store.chargeFeed(1000, 2000), []);
+    });
+
+    it('carries the tool this charge paid for, and null for a pre-migration charge', async (t) => {
+      const store = await capableStore(t);
+      if (!store) return;
+      await store.putCharge(charge({ nonce: 'with-tool', createdAt: 1000, tool: 'lookup_market_data' }));
+      await store.putCharge(charge({ nonce: 'legacy', createdAt: 1000, tool: null }));
+
+      const feed = await store.chargeFeed(0, 2000);
+      const byNonce = new Map(feed.map((c) => [c.nonce, c]));
+      assert.equal(byNonce.get('with-tool')?.tool, 'lookup_market_data');
+      assert.equal(byNonce.get('legacy')?.tool, null);
+    });
+
+    it('is ordered by createdAt', async (t) => {
+      const store = await capableStore(t);
+      if (!store) return;
+      await store.putCharge(charge({ nonce: 'third', createdAt: 3000 }));
+      await store.putCharge(charge({ nonce: 'first', createdAt: 1000 }));
+      await store.putCharge(charge({ nonce: 'second', createdAt: 2000 }));
+
+      const feed = await store.chargeFeed(0, 4000);
+      assert.deepEqual(feed.map((c) => c.nonce), ['first', 'second', 'third']);
     });
   });
 

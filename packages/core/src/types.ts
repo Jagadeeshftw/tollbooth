@@ -82,6 +82,12 @@ export interface Charge {
    * price table, which is exactly what every charge did before this existed.
    */
   readonly price: Price | null;
+  /**
+   * The MCP tool this charge paid for. `null` only for a charge written
+   * before this field existed — there is no way to recover which tool an old
+   * charge was for after the fact, the same reasoning as {@link price}.
+   */
+  readonly tool: string | null;
   readonly status: ChargeStatus;
   /** Provider's own id for the request, e.g. a Moove payment-link id. */
   readonly providerRef: string | null;

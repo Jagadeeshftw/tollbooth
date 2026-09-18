@@ -74,6 +74,19 @@ export const MIGRATIONS: readonly Migration[] = [
       `ALTER TABLE tollbooth_charges ADD COLUMN IF NOT EXISTS price JSONB`,
     ],
   },
+  {
+    id: '0003_charge_tool',
+    statements: [
+      // Same reasoning as price: nullable, never backfilled, existing rows
+      // read back as `tool: null`.
+      `ALTER TABLE tollbooth_charges ADD COLUMN IF NOT EXISTS tool TEXT`,
+      // The charge feed's whole query shape is "created_at or settled_at
+      // falls in a window" — this index covers the settled_at half; the
+      // existing tollbooth_charges_status index already covers created_at.
+      `CREATE INDEX IF NOT EXISTS tollbooth_charges_settled_at
+         ON tollbooth_charges (settled_at) WHERE settled_at IS NOT NULL`,
+    ],
+  },
 ];
 
 export const MIGRATIONS_TABLE = `

@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 
 import type {
   Charge,
+  ChargeFeedStore,
   ChargeStatus,
   ConsumeResult,
   Entitlement,
@@ -47,6 +48,7 @@ interface ChargeRow {
   amount: string;
   /** JSON-serialised {@link Price} snapshot, or NULL for a pre-migration row. */
   price: string | null;
+  tool: string | null;
   status: string;
   provider_ref: string | null;
   checkout_url: string | null;
@@ -78,6 +80,7 @@ CREATE TABLE IF NOT EXISTS charges (
   sku             TEXT    NOT NULL,
   amount          TEXT    NOT NULL,
   price           TEXT,               -- JSON snapshot; NULL only pre-migration
+  tool            TEXT,               -- NULL only pre-migration
   status          TEXT    NOT NULL,
   provider_ref    TEXT,
   checkout_url    TEXT,
@@ -113,7 +116,7 @@ CREATE TABLE IF NOT EXISTS settlement_claims (
  * version, so it is safe both against concurrent calls in one process and
  * against a second process holding its own connection to the same file.
  */
-export class SqliteEntitlementStore implements EntitlementStore {
+export class SqliteEntitlementStore implements EntitlementStore, ChargeFeedStore {
   readonly #db: Database.Database;
   readonly #now: () => number;
 
@@ -151,11 +154,13 @@ export class SqliteEntitlementStore implements EntitlementStore {
     // file that already existed before `price` was added to `charges` keeps
     // its old shape. Add the column defensively, and ignore the one error
     // that means it is already there.
-    try {
-      this.#db.exec('ALTER TABLE charges ADD COLUMN price TEXT');
-    } catch (error) {
-      const message = (error as { message?: string }).message ?? '';
-      if (!message.includes('duplicate column name')) throw error;
+    for (const statement of ['ALTER TABLE charges ADD COLUMN price TEXT', 'ALTER TABLE charges ADD COLUMN tool TEXT']) {
+      try {
+        this.#db.exec(statement);
+      } catch (error) {
+        const message = (error as { message?: string }).message ?? '';
+        if (!message.includes('duplicate column name')) throw error;
+      }
     }
   }
 
@@ -257,10 +262,10 @@ export class SqliteEntitlementStore implements EntitlementStore {
     this.#db
       .prepare(
         `INSERT INTO charges
-           (nonce, id, subject, sku, amount, price, status, provider_ref, checkout_url,
+           (nonce, id, subject, sku, amount, price, tool, status, provider_ref, checkout_url,
             created_at, expires_at, settled_at, received_amount, last_polled_at, poll_count)
          VALUES
-           (@nonce, @id, @subject, @sku, @amount, @price, @status, @providerRef, @checkoutUrl,
+           (@nonce, @id, @subject, @sku, @amount, @price, @tool, @status, @providerRef, @checkoutUrl,
             @createdAt, @expiresAt, @settledAt, @receivedAmount, @lastPolledAt, @pollCount)
          ON CONFLICT(nonce) DO UPDATE SET
            status = excluded.status,
@@ -275,6 +280,7 @@ export class SqliteEntitlementStore implements EntitlementStore {
         amount: c.amount,
         // Never touched on conflict: the snapshot is fixed at creation.
         price: c.price === null ? null : JSON.stringify(c.price),
+        tool: c.tool,
         status: c.status,
         providerRef: c.providerRef,
         checkoutUrl: c.checkoutUrl,
@@ -324,6 +330,19 @@ export class SqliteEntitlementStore implements EntitlementStore {
         `SELECT * FROM charges WHERE status = 'pending' AND created_at <= ? ORDER BY created_at ASC`
       )
       .all(before)
+      .map(toCharge);
+  }
+
+  /** {@link ChargeFeedStore.chargeFeed}. */
+  async chargeFeed(since: number, until: number): Promise<Charge[]> {
+    return this.#db
+      .prepare<[number, number, number, number], ChargeRow>(
+        `SELECT * FROM charges
+          WHERE (created_at >= ? AND created_at < ?)
+             OR (settled_at IS NOT NULL AND settled_at >= ? AND settled_at < ?)
+          ORDER BY created_at ASC`
+      )
+      .all(since, until, since, until)
       .map(toCharge);
   }
 
@@ -400,6 +419,7 @@ function toCharge(row: ChargeRow): Charge {
     sku: row.sku,
     amount: row.amount,
     price: row.price === null ? null : JSON.parse(row.price),
+    tool: row.tool,
     status: row.status as ChargeStatus,
     providerRef: row.provider_ref,
     checkoutUrl: row.checkout_url,

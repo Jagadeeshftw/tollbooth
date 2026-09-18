@@ -49,7 +49,8 @@ export type { SettlementDecision, SettlementPolicy } from './settlement.js';
 
 export type { PaymentProvider, SettlementOutcome } from './provider.js';
 
-export type { EntitlementStore } from './store.js';
+export { hasChargeFeed } from './store.js';
+export type { ChargeFeedStore, EntitlementStore } from './store.js';
 
 export {
   DEFAULT_SUBJECT_TTL_MS,

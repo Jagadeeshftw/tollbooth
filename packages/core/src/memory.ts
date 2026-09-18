@@ -1,5 +1,5 @@
 import { isUsable } from './pricing.js';
-import type { EntitlementStore } from './store.js';
+import type { ChargeFeedStore, EntitlementStore } from './store.js';
 import type { SubjectRecord } from './subjects.js';
 import type { Charge, ConsumeResult, Entitlement, Sku, Subject } from './types.js';
 
@@ -27,7 +27,7 @@ const MAX_CAS_ATTEMPTS = 16;
  * Use it in tests and to read the contract. Reach for `@tollbooth/store-sqlite`
  * anywhere a restart would cost somebody credits they paid for.
  */
-export class MemoryEntitlementStore implements EntitlementStore {
+export class MemoryEntitlementStore implements EntitlementStore, ChargeFeedStore {
   readonly #entitlements = new Map<string, Entitlement>();
   readonly #charges = new Map<string, Charge>();
   readonly #claimed = new Set<string>();
@@ -124,6 +124,17 @@ export class MemoryEntitlementStore implements EntitlementStore {
     return [...this.#charges.values()].filter(
       (c) => c.status === 'pending' && c.createdAt <= before
     );
+  }
+
+  /** {@link ChargeFeedStore.chargeFeed}. */
+  async chargeFeed(since: number, until: number): Promise<Charge[]> {
+    return [...this.#charges.values()]
+      .filter(
+        (c) =>
+          (c.createdAt >= since && c.createdAt < until) ||
+          (c.settledAt !== null && c.settledAt >= since && c.settledAt < until)
+      )
+      .sort((a, b) => a.createdAt - b.createdAt);
   }
 
   async listEntitlements(subject: Subject): Promise<Entitlement[]> {

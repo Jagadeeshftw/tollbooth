@@ -3,6 +3,7 @@ import type { PoolClient, PoolConfig, QueryResultRow } from 'pg';
 
 import type {
   Charge,
+  ChargeFeedStore,
   ChargeStatus,
   ConsumeResult,
   Entitlement,
@@ -51,6 +52,7 @@ interface ChargeRow {
   amount: string;
   /** `pg` parses JSONB itself; NULL only for a pre-migration row. */
   price: Record<string, unknown> | null;
+  tool: string | null;
   status: string;
   provider_ref: string | null;
   checkout_url: string | null;
@@ -142,7 +144,7 @@ const n = (v: string | null): number | null => (v === null ? null : Number(v));
  * unique-constraint insert, which makes exactly-once survive both restarts and
  * concurrent workers.
  */
-export class PostgresEntitlementStore implements EntitlementStore {
+export class PostgresEntitlementStore implements EntitlementStore, ChargeFeedStore {
   readonly #pool: Pool;
   readonly #now: () => number;
   readonly #maxRetries: number;
@@ -352,9 +354,9 @@ export class PostgresEntitlementStore implements EntitlementStore {
   async putCharge(c: Charge): Promise<void> {
     await this.#query(
       `INSERT INTO tollbooth_charges
-         (nonce, id, subject, sku, amount, price, status, provider_ref, checkout_url,
+         (nonce, id, subject, sku, amount, price, tool, status, provider_ref, checkout_url,
           created_at, expires_at, settled_at, received_amount, last_polled_at, poll_count)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        ON CONFLICT (nonce) DO UPDATE SET
          status = EXCLUDED.status,
          provider_ref = EXCLUDED.provider_ref,
@@ -364,6 +366,7 @@ export class PostgresEntitlementStore implements EntitlementStore {
         // Never touched on conflict: the snapshot is fixed at creation. `pg`
         // needs the JSON text explicitly; it only parses JSONB coming back.
         c.price === null ? null : JSON.stringify(c.price),
+        c.tool,
         c.status, c.providerRef, c.checkoutUrl,
         c.createdAt, c.expiresAt, c.settledAt, c.receivedAmount, c.lastPolledAt, c.pollCount,
       ]
@@ -376,6 +379,18 @@ export class PostgresEntitlementStore implements EntitlementStore {
       [nonce]
     );
     return rows[0] ? toCharge(rows[0]) : undefined;
+  }
+
+  /** {@link ChargeFeedStore.chargeFeed}. */
+  async chargeFeed(since: number, until: number): Promise<Charge[]> {
+    const { rows } = await this.#query<ChargeRow>(
+      `SELECT * FROM tollbooth_charges
+        WHERE (created_at >= $1 AND created_at < $2)
+           OR (settled_at IS NOT NULL AND settled_at >= $1 AND settled_at < $2)
+        ORDER BY created_at ASC`,
+      [since, until]
+    );
+    return rows.map(toCharge);
   }
 
   async updateCharge(nonce: string, patch: Partial<Charge>): Promise<void> {
@@ -486,6 +501,7 @@ function toCharge(row: ChargeRow): Charge {
     sku: row.sku,
     amount: row.amount,
     price: row.price as Charge['price'],
+    tool: row.tool,
     status: row.status as ChargeStatus,
     providerRef: row.provider_ref,
     checkoutUrl: row.checkout_url,

@@ -74,6 +74,7 @@ class StubProvider implements PaymentProvider {
       sku: args.sku,
       amount: PACK.amount,
       price: PACK,
+      tool: args.toolName ?? null,
       status: 'pending',
       providerRef: 'pl_stub',
       checkoutUrl: 'https://www.moove.xyz/pay/pl_stub',

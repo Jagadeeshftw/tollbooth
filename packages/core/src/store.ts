@@ -70,4 +70,32 @@ export interface EntitlementStore {
   close(): Promise<void>;
 }
 
+/**
+ * Optional. A store that implements this can produce every charge that was
+ * created or settled within a window, for exact reporting after a gap —
+ * never approximated, never re-derived from anything but the store's own
+ * durable record of what actually happened.
+ *
+ * Deliberately not part of {@link EntitlementStore} itself: adding a required
+ * method there would break every existing implementation at compile time the
+ * moment this shipped. A store either implements this interface in addition
+ * to `EntitlementStore`, or it doesn't, and callers detect which with
+ * {@link hasChargeFeed} rather than assuming.
+ */
+export interface ChargeFeedStore {
+  /**
+   * Every charge whose `createdAt` or `settledAt` falls in `[since, until)` —
+   * i.e. every charge that could have produced a wire event timestamped
+   * inside that window, whether by opening or by settling. Ordered by
+   * `createdAt`. A charge that both opened and settled inside the window
+   * appears once, carrying both timestamps, exactly as `getCharge` would
+   * return it.
+   */
+  chargeFeed(since: number, until: number): Promise<Charge[]>;
+}
+
+export function hasChargeFeed(store: EntitlementStore): store is EntitlementStore & ChargeFeedStore {
+  return typeof (store as Partial<ChargeFeedStore>).chargeFeed === 'function';
+}
+
 export type { Charge, ChargeStatus, ConsumeResult, Entitlement, SubjectRecord };

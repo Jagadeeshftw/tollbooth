@@ -181,6 +181,7 @@ export class MooveProvider implements PaymentProvider {
       sku: args.sku,
       amount: price.amount,
       price,
+      tool: args.toolName ?? null,
       status: 'pending',
       providerRef: created.id,
       checkoutUrl: created.url,
