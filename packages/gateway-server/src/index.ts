@@ -53,9 +53,19 @@ export {
   medianTimeToPaySeconds,
   overviewSummary,
   recentActivity,
+  recentUnderpaidCharges,
+  reportedPricesAndTools,
   revenueByDay,
   settlementOutcomeCounts,
 } from './queries.js';
-export type { ActivityRow, CreditsOutstanding, DailyRevenue, OutcomeCounts, OverviewSummary } from './queries.js';
+export type {
+  ActivityRow,
+  CreditsOutstanding,
+  DailyRevenue,
+  OutcomeCounts,
+  OverviewSummary,
+  PriceCatalogEntry,
+  UnderpaidChargeRow,
+} from './queries.js';
 
 export { mintIngestToken, mintTenantId, secretsEqual } from './ids.js';

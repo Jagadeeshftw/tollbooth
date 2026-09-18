@@ -12,6 +12,8 @@ import {
   medianTimeToPaySeconds,
   overviewSummary,
   recentActivity,
+  recentUnderpaidCharges,
+  reportedPricesAndTools,
   revenueByDay,
   settlementOutcomeCounts,
 } from '../src/queries.js';
@@ -279,6 +281,120 @@ if (!CONNECTION_STRING) {
         );
         const rows = await recentActivity(db, t.id, 3);
         assert.equal(rows.length, 3);
+      } finally {
+        await db.close();
+      }
+    });
+  });
+
+  describe('reportedPricesAndTools', () => {
+    it('is empty for a tenant with no charges', async () => {
+      const db = await freshDatabase();
+      try {
+        const t = await tenant(db);
+        assert.deepEqual(await reportedPricesAndTools(db, t.id), []);
+      } finally {
+        await db.close();
+      }
+    });
+
+    it('reports one row per distinct (tool, sku), never one per charge', async () => {
+      const db = await freshDatabase();
+      try {
+        const t = await tenant(db);
+        await ingestBatch(db, t.id, [
+          chargeOpened({ chargeRef: 'p1'.repeat(16), tool: 'lookup_market_data', sku: 'search', amount: '10.00', at: 1000 }),
+          chargeOpened({ chargeRef: 'p2'.repeat(16), tool: 'lookup_market_data', sku: 'search', amount: '10.00', at: 2000 }),
+          chargeOpened({ chargeRef: 'p3'.repeat(16), tool: 'summarise_pdf', sku: 'docs', amount: '2.50', at: 1500 }),
+        ]);
+        const rows = await reportedPricesAndTools(db, t.id);
+        assert.deepEqual(
+          rows.map((r) => `${r.tool}:${r.sku}`).sort(),
+          ['lookup_market_data:search', 'summarise_pdf:docs']
+        );
+      } finally {
+        await db.close();
+      }
+    });
+
+    it('reports the most recently seen amount for a (tool, sku) pair that repriced', async () => {
+      const db = await freshDatabase();
+      try {
+        const t = await tenant(db);
+        await ingestBatch(db, t.id, [
+          chargeOpened({ chargeRef: 'r1'.repeat(16), tool: 'lookup_market_data', sku: 'search', amount: '10.00', at: 1000 }),
+          chargeOpened({ chargeRef: 'r2'.repeat(16), tool: 'lookup_market_data', sku: 'search', amount: '12.00', at: 5000 }),
+        ]);
+        const rows = await reportedPricesAndTools(db, t.id);
+        assert.equal(rows.length, 1);
+        assert.equal(rows[0]?.amount, '12.00', 'the later price wins, not the earlier one');
+      } finally {
+        await db.close();
+      }
+    });
+  });
+
+  describe('recentUnderpaidCharges', () => {
+    it('is empty when nothing has ever been underpaid', async () => {
+      const db = await freshDatabase();
+      try {
+        const t = await tenant(db);
+        await ingestBatch(db, t.id, [
+          chargeOpened({ chargeRef: 'g1'.repeat(16), at: 1000 }),
+          settlement({ chargeRef: 'g1'.repeat(16), status: 'granted', at: 2000 }),
+        ]);
+        assert.deepEqual(await recentUnderpaidCharges(db, t.id), []);
+      } finally {
+        await db.close();
+      }
+    });
+
+    it('lists an underpaid charge, and never a granted or partial one', async () => {
+      const db = await freshDatabase();
+      try {
+        const t = await tenant(db);
+        await ingestBatch(db, t.id, [
+          chargeOpened({ chargeRef: 'u1'.repeat(16), tool: 'lookup_market_data', sku: 'search', amount: '10.00', at: 1000 }),
+          settlement({
+            chargeRef: 'u1'.repeat(16),
+            status: 'underpaid',
+            amount: '10.00',
+            receivedAmount: '0.50',
+            receivedFraction: 0.05,
+            at: 2000,
+          }),
+          chargeOpened({ chargeRef: 'g1'.repeat(16), at: 1000 }),
+          settlement({ chargeRef: 'g1'.repeat(16), status: 'granted', at: 2000 }),
+        ]);
+        const rows = await recentUnderpaidCharges(db, t.id);
+        assert.equal(rows.length, 1);
+        assert.equal(rows[0]?.chargeRef, 'u1'.repeat(16));
+        assert.equal(rows[0]?.receivedAmount, '0.50');
+        assert.equal(rows[0]?.receivedFraction, 0.05);
+      } finally {
+        await db.close();
+      }
+    });
+
+    it('most recent first, and respects the limit', async () => {
+      const db = await freshDatabase();
+      try {
+        const t = await tenant(db);
+        for (let i = 0; i < 3; i++) {
+          await ingestBatch(db, t.id, [
+            chargeOpened({ chargeRef: `w${i}`.repeat(16), at: i * 1000 }),
+            settlement({
+              chargeRef: `w${i}`.repeat(16),
+              status: 'underpaid',
+              receivedAmount: '0.10',
+              receivedFraction: 0.01,
+              at: (i + 1) * 1000,
+            }),
+          ]);
+        }
+        const rows = await recentUnderpaidCharges(db, t.id, 2);
+        assert.equal(rows.length, 2);
+        assert.equal(rows[0]?.chargeRef, 'w2'.repeat(16), 'most recently settled first');
       } finally {
         await db.close();
       }

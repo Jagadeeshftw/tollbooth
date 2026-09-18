@@ -179,3 +179,90 @@ export async function recentActivity(db: GatewayDatabase, tenantId: string, limi
     return rows.map((r) => ({ chargeRef: r.charge_ref, tool: r.tool, sku: r.sku, amount: r.amount, status: r.status, at: Number(r.at) }));
   });
 }
+
+export interface PriceCatalogEntry {
+  readonly tool: string;
+  readonly sku: string;
+  readonly amount: string;
+  readonly currency: string;
+  /** When this (tool, sku) pair was last seen opening a charge. */
+  readonly lastSeenAt: number;
+}
+
+/**
+ * Read-only: what this tenant's own server has actually charged for, derived
+ * from `charge_opened` events already ingested — never configured here, and
+ * never fed back to the tenant's server. A `(tool, sku)` pair can reprice
+ * over time; this reports whatever amount was most recently seen, not a
+ * history of every price it has ever had.
+ */
+export async function reportedPricesAndTools(db: GatewayDatabase, tenantId: string): Promise<PriceCatalogEntry[]> {
+  return db.withTenant(tenantId, async (client) => {
+    const { rows } = await client.query<{
+      tool: string;
+      sku: string;
+      amount: string;
+      currency: string;
+      last_seen_at: string;
+    }>(
+      `SELECT DISTINCT ON (tool, sku) tool, sku, amount, currency, opened_at AS last_seen_at
+         FROM gateway_charges
+        WHERE tenant_id = $1 AND tool IS NOT NULL
+        ORDER BY tool, sku, opened_at DESC`,
+      [tenantId]
+    );
+    return rows.map((r) => ({
+      tool: r.tool,
+      sku: r.sku,
+      amount: r.amount,
+      currency: r.currency,
+      lastSeenAt: Number(r.last_seen_at),
+    }));
+  });
+}
+
+export interface UnderpaidChargeRow {
+  readonly chargeRef: string;
+  readonly tool: string | null;
+  readonly sku: string;
+  readonly amount: string | null;
+  readonly receivedAmount: string | null;
+  readonly receivedFraction: number | null;
+  readonly at: number;
+}
+
+/** Most recent underpaid settlements first — money that arrived short of the ask and was never granted. */
+export async function recentUnderpaidCharges(
+  db: GatewayDatabase,
+  tenantId: string,
+  limit = 20
+): Promise<UnderpaidChargeRow[]> {
+  return db.withTenant(tenantId, async (client) => {
+    const { rows } = await client.query<{
+      charge_ref: string;
+      tool: string | null;
+      sku: string;
+      amount: string | null;
+      received_amount: string | null;
+      received_fraction: string | null;
+      at: string;
+    }>(
+      `SELECT charge_ref, tool, sku, amount, received_amount, received_fraction,
+              COALESCE(settled_at, opened_at)::text AS at
+         FROM gateway_charges
+        WHERE tenant_id = $1 AND status = 'underpaid'
+        ORDER BY COALESCE(settled_at, opened_at) DESC NULLS LAST
+        LIMIT $2`,
+      [tenantId, limit]
+    );
+    return rows.map((r) => ({
+      chargeRef: r.charge_ref,
+      tool: r.tool,
+      sku: r.sku,
+      amount: r.amount,
+      receivedAmount: r.received_amount,
+      receivedFraction: r.received_fraction === null ? null : Number(r.received_fraction),
+      at: Number(r.at),
+    }));
+  });
+}

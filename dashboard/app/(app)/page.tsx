@@ -3,13 +3,17 @@ import {
   medianTimeToPaySeconds,
   overviewSummary,
   recentActivity,
+  recentUnderpaidCharges,
+  reportedPricesAndTools,
   revenueByDay,
   settlementOutcomeCounts,
 } from '@tollbooth/gateway-server';
 
 import { ActivityTable } from '@/components/ActivityTable';
+import { PriceCatalogTable } from '@/components/PriceCatalogTable';
 import { RevenueChart } from '@/components/RevenueChart';
 import { SettlementFunnel } from '@/components/SettlementFunnel';
+import { UnderpaidAlerts } from '@/components/UnderpaidAlerts';
 import { gatewayDb } from '@/lib/db';
 import { requireTenant } from '@/lib/auth';
 
@@ -28,13 +32,15 @@ export default async function OverviewPage() {
   const db = gatewayDb();
   const now = Date.now();
 
-  const [summary, outcomes, outstanding, medianPay, revenueDays, activity] = await Promise.all([
+  const [summary, outcomes, outstanding, medianPay, revenueDays, activity, priceCatalog, underpaid] = await Promise.all([
     overviewSummary(db, tenant.id, 30, now),
     settlementOutcomeCounts(db, tenant.id, 30, now),
     creditsOutstanding(db, tenant.id),
     medianTimeToPaySeconds(db, tenant.id),
     revenueByDay(db, tenant.id, 30, now),
     recentActivity(db, tenant.id, 20),
+    reportedPricesAndTools(db, tenant.id),
+    recentUnderpaidCharges(db, tenant.id, 20),
   ]);
 
   const totalOpened = outcomes.granted + outcomes.partial + outcomes.underpaid + outcomes.expired;
@@ -161,6 +167,29 @@ export default async function OverviewPage() {
               <span className="panel-caption">Most recent first</span>
             </div>
             <ActivityTable rows={activity} now={now} />
+          </div>
+
+          <div className="panel">
+            <div className="panel-head">
+              <h2 className="panel-title">Prices &amp; tools</h2>
+              <span className="panel-caption">What your server has actually charged for</span>
+            </div>
+            {priceCatalog.length === 0 ? (
+              <p className="range-note">No charges opened yet — a tool and its price show up here as soon as one is.</p>
+            ) : (
+              <PriceCatalogTable rows={priceCatalog} />
+            )}
+            <span className="range-note">
+              Read-only. Reported by your server, not configured here — reprice on your side and this follows.
+            </span>
+          </div>
+
+          <div className="panel">
+            <div className="panel-head">
+              <h2 className="panel-title">Underpaid</h2>
+              <span className="panel-caption">Settled short of the ask, never granted</span>
+            </div>
+            <UnderpaidAlerts rows={underpaid} now={now} />
           </div>
         </>
       )}
