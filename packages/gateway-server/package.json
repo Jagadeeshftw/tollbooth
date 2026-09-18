@@ -16,5 +16,8 @@
     "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts"
   },
   "dependencies": { "@tollbooth/gateway-client": "0.1.0", "pg": "^8.13.1" },
-  "devDependencies": { "@types/pg": "^8.11.10" }
+  "devDependencies": {
+    "@tollbooth/core": "0.1.0",
+    "@types/pg": "^8.11.10"
+  }
 }

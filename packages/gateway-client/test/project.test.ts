@@ -103,6 +103,23 @@ describe('the wire policy: fingerprints, tool names, skus, amounts and timestamp
       );
     });
 
+    it('mints the same eventId for the same observation reported twice, so a retry or a much later backfill converges on it', () => {
+      const a = projectSettlement({ status: 'granted', charge: BASE_CHARGE, entitlementId: 'tb_e_1' }, now)!;
+      const b = projectSettlement({ status: 'granted', charge: BASE_CHARGE, entitlementId: 'tb_e_1' }, 9_999_999)!;
+      assert.equal(a.eventId, b.eventId, 'identical chargeRef, status and receivedAmount — the reporting time must not matter');
+    });
+
+    it('mints a different eventId for a later, different observation of the same charge', () => {
+      // The underpaid-then-granted case ingest.ts's own comments describe:
+      // two real observations of the same charge, which must count as two.
+      const underpaid = projectSettlement(
+        { status: 'underpaid', charge: BASE_CHARGE, expected: '10.00', received: '0.50', receivedFraction: 0.05 },
+        now
+      )!;
+      const granted = projectSettlement({ status: 'granted', charge: BASE_CHARGE, entitlementId: 'tb_e_1' }, now)!;
+      assert.notEqual(underpaid.eventId, granted.eventId);
+    });
+
     describe('credits granted', () => {
       it('granted (full) reads the count from the charge\'s own price snapshot, not the outcome', () => {
         const projected = projectSettlement({ status: 'granted', charge: BASE_CHARGE, entitlementId: 'e' }, now)!;
@@ -205,9 +222,15 @@ describe('the wire policy: fingerprints, tool names, skus, amounts and timestamp
       );
     });
 
-    it('mints a fresh eventId per projection, for the ingest endpoint to dedupe on', () => {
+    it('mints the same eventId every time the same charge is projected, so a retry or a much later backfill converges on it', () => {
       const a = projectChargeOpened(raw);
       const b = projectChargeOpened(raw);
+      assert.equal(a.eventId, b.eventId);
+    });
+
+    it('mints a different eventId for a genuinely different charge', () => {
+      const a = projectChargeOpened(raw);
+      const b = projectChargeOpened({ ...raw, nonce: 'a-different-nonce' });
       assert.notEqual(a.eventId, b.eventId);
     });
   });

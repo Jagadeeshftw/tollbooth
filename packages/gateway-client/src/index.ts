@@ -12,9 +12,11 @@
  */
 
 export { GatewayClient } from './client.js';
-export type { GatewayClientOptions } from './client.js';
+export type { BackfillOptions, BackfillReport, GatewayClientOptions } from './client.js';
 
-export { chargeRefFrom, projectCall, projectChargeOpened, projectSettlement } from './project.js';
+export { chargeRefFrom, deterministicEventId, projectCall, projectChargeOpened, projectSettlement } from './project.js';
+
+export { eventsForCharge } from './backfill.js';
 
 export type {
   RawCallEvent,

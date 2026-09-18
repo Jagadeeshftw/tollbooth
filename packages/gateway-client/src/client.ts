@@ -1,8 +1,29 @@
+import type { ChargeFeedStore, EntitlementStore, SettlementPolicy } from '@tollbooth/core';
+import { hasChargeFeed } from '@tollbooth/core';
 import type { SettlementOutcome } from '@tollbooth/core';
 
+import { eventsForCharge } from './backfill.js';
 import { backoffDelayMs } from './backoff.js';
 import type { RawCallEvent, RawChargeOpenedEvent, WireEvent } from './events.js';
 import { projectCall, projectChargeOpened, projectSettlement } from './project.js';
+
+export interface BackfillOptions {
+  /** Must match the tenant's actual `PaymentProvider` configuration — see `eventsForCharge`. */
+  policy?: SettlementPolicy;
+  /** Events per ingest request. Default is this client's own `maxBatchSize`. */
+  batchSize?: number;
+}
+
+export interface BackfillReport {
+  /** Charges the store's feed returned for this window. */
+  chargesScanned: number;
+  /** Wire events reconstructed from those charges. */
+  eventsReconstructed: number;
+  /** Genuinely new to the gateway — the actual gap this backfill filled. */
+  accepted: number;
+  /** Already known to the gateway — safe no-ops, not double-counted. */
+  duplicate: number;
+}
 
 export interface GatewayClientOptions {
   /** The tenant's gateway ingest URL. */
@@ -145,6 +166,69 @@ export class GatewayClient {
       this.#flushing = undefined;
     });
     return this.#flushing;
+  }
+
+  /**
+   * Recover an ingest gap exactly, straight from the tenant's own
+   * entitlement store — never from anything this client happened to have
+   * queued, which is exactly what a gap means is unavailable.
+   *
+   * Unlike the live telemetry path, this does not swallow failures into
+   * `onDropped`: it is an explicit, one-shot operator action, run once and
+   * watched, not fire-and-forget analytics on a paid tool's call path — a
+   * failure here should stop the operator, not vanish into a callback.
+   *
+   * Safe to run over a window that overlaps events already delivered live:
+   * see `eventsForCharge`'s own doc comment for why re-ingesting an
+   * already-known event is a no-op rather than a second count.
+   */
+  async backfill(
+    store: EntitlementStore,
+    since: number,
+    until: number,
+    options: BackfillOptions = {}
+  ): Promise<BackfillReport> {
+    if (!hasChargeFeed(store)) {
+      throw new Error(
+        'this store does not implement the optional charge feed capability — see hasChargeFeed from @tollbooth/core'
+      );
+    }
+    const charges = await (store as EntitlementStore & ChargeFeedStore).chargeFeed(since, until);
+    const events = charges.flatMap((c) => eventsForCharge(c, options.policy));
+
+    const batchSize = options.batchSize ?? this.#maxBatchSize;
+    let accepted = 0;
+    let duplicate = 0;
+    for (let i = 0; i < events.length; i += batchSize) {
+      const result = await this.#sendBackfillBatch(events.slice(i, i + batchSize));
+      accepted += result.accepted;
+      duplicate += result.duplicate;
+    }
+    return { chargesScanned: charges.length, eventsReconstructed: events.length, accepted, duplicate };
+  }
+
+  /** Retries like `#send`, but throws on final failure instead of reporting via `onDropped`. */
+  async #sendBackfillBatch(batch: readonly WireEvent[]): Promise<{ accepted: number; duplicate: number }> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < this.#maxAttempts; attempt++) {
+      try {
+        const res = await this.#fetch(this.#endpoint, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${this.#ingestToken}`,
+          },
+          body: JSON.stringify({ events: batch }),
+        });
+        if (res.ok) return (await res.json()) as { accepted: number; duplicate: number };
+        lastError = new Error(`gateway ingest responded HTTP ${res.status}`);
+        if (res.status >= 400 && res.status < 500) break;
+      } catch (error) {
+        lastError = error;
+      }
+      if (attempt < this.#maxAttempts - 1) await this.#sleep(backoffDelayMs(attempt));
+    }
+    throw lastError ?? new Error('gateway ingest failed for an unknown reason');
   }
 
   async #doFlush(): Promise<void> {
