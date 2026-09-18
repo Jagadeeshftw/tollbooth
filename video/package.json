@@ -1,0 +1,28 @@
+{
+  "name": "tollbooth-explainer-video",
+  "version": "0.0.1",
+  "private": true,
+  "description": "The ~150s explainer video for Tollbooth, built with Remotion. Every on-screen figure is imported from site/content/measurements.ts — never hand-typed.",
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts Explainer out/explainer.mp4 --codec=h264",
+    "storyboard": "tsx scripts/storyboard.mts",
+    "typecheck": "tsc --noEmit",
+    "upgrade": "remotion upgrade"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.526",
+    "@remotion/fonts": "^4.0.526",
+    "@remotion/google-fonts": "^4.0.526",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "remotion": "4.0.526"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "tsx": "^4.23.13",
+    "typescript": "^5.7.2"
+  }
+}

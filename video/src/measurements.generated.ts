@@ -1,3 +1,4 @@
+/* GENERATED from site/content/measurements.ts — do not edit. Run: npm run sync */
 /**
  * Every number on the page, in one place, with where it came from.
  *
