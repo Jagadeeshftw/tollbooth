@@ -147,13 +147,21 @@ const http = createHttpServer(async (req, res) => {
 // The retry path settles almost everything; this catches what it missed.
 // Its outcomes go to the gateway too: a payer who never retries is settled
 // only here, and the paywall's own onSettlement never sees that.
-const reconciler = setInterval(() => {
-  provider
-    .reconcile()
-    .then((outcomes) => outcomes.forEach((o) => gateway?.onSettlement(o)))
-    .catch((e) => console.error('[research-tools] reconcile failed', e));
-}, 5 * 60 * 1000);
-reconciler.unref();
+//
+// TOLLBOOTH_RECONCILE=off pauses the sweep so the only thing that can grant
+// is an explicit retry — for inspecting a live payment before anything is
+// granted against it. A payer's own retry still settles as normal.
+if (process.env['TOLLBOOTH_RECONCILE'] === 'off') {
+  console.error('[research-tools] reconciler: paused (TOLLBOOTH_RECONCILE=off); only retries settle');
+} else {
+  const reconciler = setInterval(() => {
+    provider
+      .reconcile()
+      .then((outcomes) => outcomes.forEach((o) => gateway?.onSettlement(o)))
+      .catch((e) => console.error('[research-tools] reconcile failed', e));
+  }, 5 * 60 * 1000);
+  reconciler.unref();
+}
 
 http.listen(PORT, () => console.error(`[research-tools] listening on :${PORT}/mcp`));
 
