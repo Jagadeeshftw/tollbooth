@@ -15,7 +15,7 @@ credit pack, settling to your own wallet. Copy it and change the tools.
 
 <!-- snippet:RUN (generated from site/content/snippets.ts) -->
 ```bash
-git clone ${REPO}
+git clone https://github.com/Jagadeeshftw/tollbooth
 cd tollbooth
 npm install
 npm run build
@@ -114,7 +114,7 @@ a client at the deployed instance:
   "mcpServers": {
     "tollbooth-research": {
       "command": "npx",
-      "args": ["-y", "mcp-remote", "${SERVER}/mcp"]
+      "args": ["-y", "mcp-remote", "https://tollbooth-server-production.up.railway.app/mcp"]
     }
   }
 }
@@ -165,7 +165,7 @@ somebody who bought a pack from spending it in seconds probing hosts.
   the payer has no account and no key — so anyone holding a link id can read
   your wallet address, Moove handle and wallet provider. Fine to hand to the
   person paying; not fine to paste into a public issue or a shared log. See
-  [what a link id reveals](../../README.md#what-a-link-id-reveals).
+  [what a link id reveals](https://tollbooth.0xo.in/docs/link-ids).
 - **A checkout link lives for an hour** and cannot be deactivated — Moove has
   no endpoint for it, so expiry is the only containment.
 - **A short settlement does not fail.** Within 0.5% it grants in full; below

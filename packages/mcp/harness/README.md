@@ -43,24 +43,25 @@ did not start, and says nothing about copy.
 
 ## What was measured
 
-Blind two-turn trials, 2026-09-07, Claude Code (headless), models `sonnet` and
-`opus`. 71 scored trials.
+<!-- measured:RESULTS (generated from site/content/measurements.ts) -->
+Blind two-turn trials, 2026-09-07, Claude Code (headless), models `sonnet` and `opus`. 71 scored trials.
 
 | Carrier | n | retried | token exact | delivered |
 | --- | ---: | ---: | ---: | ---: |
-| `structured` | 18 | 18 | 18 | **18 (100%)** |
-| `text` | 43 | 41 | 41 | **41 (95%)** |
-| URL-mode elicitation | 10 | 0 | 0 | **0 (0%)** |
+| `structuredContent + text` | 18 | 18 | 18 | **18 (100%)** |
+| `text only` | 43 | 41 | 41 | **41 (95%)** |
+| `URL-mode elicitation` | 10 | 0 | 0 | **0 (0%)** |
 
-By copy variant, text carrier, five trials each:
+By copy variant, text carrier, 5 trials each:
 
 | Variant | retried |
 | --- | --- |
-| v1 (control: URL + token only) | 5/5 |
-| v2 (imperative) | 5/5 |
+| v1 (control: URL and token, no instruction) | 5/5 |
+| v2 (imperative: name the retry) | 5/5 |
 | v3 (**shipped**) | 5/5, plus 8/8 on a confirmation run |
 | v4 (two-step framing) | 4/5 |
 | v5 (maximally explicit) | 4/5 |
+<!-- /measured:RESULTS -->
 
 ### Read these numbers carefully
 

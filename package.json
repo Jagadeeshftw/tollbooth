@@ -19,8 +19,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check": "npm run check:boundaries && npm run check:generated && npm run typecheck && npm run test",
-    "sync": "node scripts/sync-generated.mjs",
-    "check:generated": "node scripts/sync-generated.mjs --check"
+    "sync": "node --import tsx scripts/sync-generated.mjs",
+    "check:generated": "node --import tsx scripts/sync-generated.mjs --check"
   },
   "devDependencies": {
     "tsx": "^4.19.2",
