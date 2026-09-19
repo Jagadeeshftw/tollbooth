@@ -44,7 +44,7 @@ export const Footer = () => (
     </div>
     <div className="border-divide flex flex-col items-center justify-between gap-2 border-t px-4 py-6 md:flex-row">
       <p className="text-footer-link text-sm">© 2026 Jagadeesh B · MIT licence</p>
-      <p className="text-footer-link font-mono text-xs">pre-release · nothing on npm yet</p>
+      <p className="text-footer-link font-mono text-xs">pre-1.0 · six packages on npm at 0.1.x</p>
     </div>
   </Container>
 );

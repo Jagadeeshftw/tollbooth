@@ -1,6 +1,8 @@
 # Changelog
 
-Nothing has shipped to npm yet (see the README). This tracks changes on `main`.
+Six packages are published on npm; the rest of the repo — the dashboard, the site, the
+example and the video — is not published and versions with `main`. This tracks changes on
+`main`, and records each npm release below.
 
 ## Unreleased
 
@@ -23,3 +25,20 @@ Nothing has shipped to npm yet (see the README). This tracks changes on `main`.
 - `@tollbooth/store-sqlite`: adds a nullable `price TEXT` (JSON) column to `charges` — present in the schema for a new database, and added defensively via `ALTER TABLE` (ignoring "duplicate column") for one that already exists.
 - Any `EntitlementStore` implementation outside this repo, and any code constructing a `Charge` object literal by hand (tests, fixtures), now needs a `price` field.
 - `examples/research-tools`: its `MooveProvider` is now constructed with `allowBelowMinimum: ['research-trial']`, since that SKU is a deliberately below-floor $1 pack. Without this the example server now refuses to start.
+
+## store-sqlite 0.1.2 — 2026-09-19
+
+### Fixed
+
+- **`@tollbooth/store-sqlite` crashed at process exit on Node 24.** `better-sqlite3` 11.10.0 aborts during teardown on Node 24.20 — `Statement::~Statement` calls `RemoveEnvironmentCleanupHook` with a null environment, failing an assertion after the tests themselves have passed. Any Node 24 user of this package hit it, not only CI. Fixed by moving to `better-sqlite3` `^12.11.1`: the full suite is green on Node 20.20.2, 22.23.2 and 24.20.0, and the cross-process contention test that reproduced it passes ten runs out of ten on 24.20.0 where 11.10.0 failed every time. The JavaScript API this package uses is unchanged across the major version; the bundled SQLite moves from 3.49.2 to 3.53.2.
+- Note for Node 20 users: from 12.10.0 `better-sqlite3` ships no prebuilt Node 20 binary, so installing on Node 20 compiles it from source and needs Python and a C++ toolchain. The package README explains this and gives an `overrides` pin for hosts without one.
+
+## 0.1.1 — 2026-09-18
+
+### Added
+
+- READMEs for the six published packages, and `repository`, `homepage` and `bugs` metadata so each npm page links back to its own directory. No code changed in this release.
+
+## 0.1.0 — 2026-09-18
+
+First npm release of the six public packages: `@tollbooth/core`, `@tollbooth/mcp`, `@tollbooth/moove`, `@tollbooth/gateway-client`, `@tollbooth/store-postgres` and `@tollbooth/store-sqlite`. `@tollbooth/design`, `@tollbooth/gateway-server` and `@tollbooth/store-conformance` stay private and unpublished.

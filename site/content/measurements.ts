@@ -16,6 +16,8 @@ export const REPO = "https://github.com/Jagadeeshftw/tollbooth";
 export const WRITEUP = "/docs/results";
 export const HARNESS = `${REPO}/tree/main/packages/mcp/harness`;
 export const QUICKSTART = `${REPO}/tree/main/examples/research-tools`;
+/** The five-minute protocol for the one client still unmeasured. */
+export const DESKTOP_TEST = `${REPO}/blob/main/DESKTOP-TEST.md`;
 export const SERVER = "https://tollbooth-server-production.up.railway.app";
 export const MOOVE = "https://moove.xyz";
 
@@ -98,13 +100,18 @@ export const mooveDocumented = {
  * before trusting an old date here; this is a snapshot, not a live query.
  */
 export const built = {
-  measuredOn: "2026-09-18",
+  measuredOn: "2026-09-20",
   method:
-    "packagesPublished: counted on npmjs.com under the @tollbooth scope. testsPassing: `npm run test` " +
-    "across every workspace (core, gateway-client, gateway-server, mcp, moove, store-postgres, " +
-    "store-sqlite, dashboard) against a fresh throwaway Postgres, summed and re-verified at 0 failures.",
+    "packagesPublished: counted on npmjs.com under the @tollbooth scope. Tests: `npm run test` across " +
+    "every workspace (core, gateway-client, gateway-server, mcp, moove, store-postgres, store-sqlite, " +
+    "dashboard, example-research-tools) against a fresh throwaway Postgres, summed from the runner's " +
+    "own totals on Node 20, 22 and 24 — identical on all three. The skipped ones are the gateway and " +
+    "dashboard Postgres suites, which need their own connection strings and are skipped, never failed, " +
+    "when those are absent.",
   packagesPublished: 6,
-  testsPassing: 400,
+  testsPassing: 386,
+  testsSkipped: 9,
+  testsTotal: 395,
   testFailures: 0,
   /** EntitlementStore backends, conformance-tested identically against the same suite. */
   entitlementStoreBackends: ["in-memory", "SQLite", "Postgres"],
