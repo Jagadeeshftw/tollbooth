@@ -1,0 +1,22 @@
+# The dashboard deploys from the repo root (it is an npm workspace member and
+# needs the workspace packages it builds against). Everything below is either
+# a secret, another project, or build output Vercel regenerates.
+
+# Secrets. Never uploaded, whatever directory they sit in.
+**/.env
+**/.env.*
+
+# Other projects, deployed separately.
+site/
+video/
+
+# Local links, build output and scratch.
+**/.vercel
+**/node_modules
+**/.next
+**/dist
+**/*.tsbuildinfo
+**/*.sqlite
+**/*.sqlite-journal
+packages/mcp/harness/logs/
+packages/mcp/harness/cfg/

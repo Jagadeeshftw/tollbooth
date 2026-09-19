@@ -9,6 +9,7 @@ dist/
 coverage/
 *.sqlite
 *.sqlite-journal
+.vercel/
 
 # tsc must never emit beside the sources
 packages/*/src/**/*.js

@@ -11,11 +11,17 @@ const monorepoRoot = fileURLToPath(new URL('..', import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   turbopack: { root: monorepoRoot },
-  // @tollbooth/gateway-server touches `pg`, which is fine server-side but
-  // must never be pulled into a client bundle — this keeps it (and the
-  // packages that use it) out of the client graph explicitly rather than by
-  // accident.
-  serverExternalPackages: ['pg', '@tollbooth/gateway-server'],
+  // `pg` is the one package a deployed function loads at runtime rather than
+  // from the bundle, and it lives in the monorepo's root node_modules. Tracing
+  // has to be rooted there for it to be copied into the function.
+  outputFileTracingRoot: monorepoRoot,
+  // pg is kept out of the bundle: it optionally imports the native `pg-native`
+  // binding, which bundlers cannot resolve. @tollbooth/gateway-server is not
+  // listed, and does not need to be — as a workspace package its real path is
+  // outside node_modules, so it is bundled like first-party code. It stays out
+  // of the client bundle because only server code imports it as a value;
+  // client components import its types, which erase at compile time.
+  serverExternalPackages: ['pg'],
 };
 
 export default nextConfig;
