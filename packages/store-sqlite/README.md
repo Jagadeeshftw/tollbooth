@@ -8,6 +8,18 @@ Durable SQLite `EntitlementStore` for Tollbooth — the production default. Enti
 npm install @tollbooth/store-sqlite
 ```
 
+### Node versions
+
+Node 20, 22 and 24. The SQLite driver, [`better-sqlite3`](https://www.npmjs.com/package/better-sqlite3), ships prebuilt binaries for Node 22 and 24, so installs there download a binary and are done.
+
+On Node 20 it no longer ships one, so npm compiles it from source — which needs Python and a C++ toolchain (`build-essential` on Debian/Ubuntu, Xcode Command Line Tools on macOS). Slim and Alpine images usually lack them. If you can't install a toolchain, pin the driver to its last release with Node 20 binaries in your own `package.json`:
+
+```json
+"overrides": { "better-sqlite3": "12.9.0" }
+```
+
+Node 20 is past end-of-life; moving to 22 or 24 removes the compile step entirely.
+
 ## Use
 
 ```js

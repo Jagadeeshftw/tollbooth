@@ -1,6 +1,6 @@
 {
   "name": "@tollbooth/store-sqlite",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Durable SQLite entitlement store for Tollbooth. The production default.",
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/Jagadeeshftw/tollbooth.git", "directory": "packages/store-sqlite" },
@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@tollbooth/core": "0.1.1",
-    "better-sqlite3": "^11.7.0"
+    "better-sqlite3": "^12.11.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
