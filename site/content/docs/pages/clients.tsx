@@ -1,5 +1,5 @@
 import { A, Basis, H2, Mono, Note, P, Strong, Table } from "@/components/docs/prose";
-import { trials } from "@/content/measurements";
+import { DESKTOP_TEST, trials } from "@/content/measurements";
 import type { DocMeta } from "../registry";
 
 export const meta: DocMeta = {
@@ -55,9 +55,11 @@ export default function Page() {
       <Note kind="unresolved" title="The one surface where the answer is genuinely unknown">
         Desktop is where a human-in-the-loop paywall matters most, and we have no data. Two
         things need a person at the app: whether the checkout link renders clickable, and
-        whether the model retries. A test kit exists in the repository (<Mono>DESKTOP-TEST.md</Mono>)
-        with a paste-ready config for the deployed server, the two prompts verbatim, and a
-        command that reads the server log and answers the retry question objectively. If Desktop
+        whether the model retries. A five-minute test kit is in the repository —{" "}
+        <A href={DESKTOP_TEST}>DESKTOP-TEST.md</A> — with a paste-ready config for the deployed
+        server, the two prompts verbatim, a command that reads the server log and answers the
+        retry question objectively, and the interpretation of each outcome written down before
+        the run rather than after it. If Desktop
         will not render a clickable link or will not retry, that changes the product, not the
         code — and this page will say so.
       </Note>

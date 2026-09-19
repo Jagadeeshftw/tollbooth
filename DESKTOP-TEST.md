@@ -1,7 +1,7 @@
 # Claude Desktop test — the one thing still unmeasured
 
-Five minutes. Two prompts, one command. You judge two things; the log answers
-the rest.
+Five minutes. Two prompts, one command. Two things are judged by eye; the log
+answers the rest.
 
 ## 1. Config
 
@@ -31,16 +31,16 @@ Nothing secret goes in this file — the deployed server holds the keys.
 
 Expect a payment challenge with a checkout link.
 
-**Judge now: is the link clickable, or plain text you would have to copy?**
+**Judge by eye: is the link clickable, or plain text that would have to be copied?**
 
 ## 3. Prompt two, verbatim
 
-Do **not** pay. Say you did — we are testing whether the model retries, not
-whether the payment works:
+Do **not** pay. Claim to have paid — what is under test is whether the model
+retries, not whether the payment works:
 
 > OK, I've opened that link and completed the payment. It went through. Please continue.
 
-**Judge now: what did it actually say?**
+**Judge by eye: what did it actually say?**
 
 ## 4. The command
 
@@ -66,7 +66,7 @@ Exit code 0 means the loop closed. That is the whole result.
 | --- | --- |
 | Called twice **and** byte-identical | The design works on Desktop. Nothing changes. |
 | Called twice, token **not** identical | The model mangled the handle. Fixable in copy. |
-| **Not** called twice | Desktop does not retry. **This changes the product, not the code** — stop and tell me. |
+| **Not** called twice | Desktop does not retry. **This changes the product, not the code** — stop there; it is a finding, not a bug to fix. |
 | No calls at all | Desktop never reached the server. A config or `mcp-remote` problem, not a finding. |
 
 ## Why Cursor is skipped

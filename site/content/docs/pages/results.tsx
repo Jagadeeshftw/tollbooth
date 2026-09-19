@@ -1,5 +1,5 @@
 import { A, Basis, Code, H2, Mono, Note, P, Strong, Table, UL } from "@/components/docs/prose";
-import { HARNESS, copyVariants, live, trials } from "@/content/measurements";
+import { DESKTOP_TEST, HARNESS, copyVariants, live, trials } from "@/content/measurements";
 import type { DocMeta } from "../registry";
 
 export const meta: DocMeta = {
@@ -147,7 +147,7 @@ Turn 2  "OK, I've opened that link and completed the payment.
 
       <H2 id="limits">What this does not tell you</H2>
       <UL>
-        <li>These are Claude Code numbers, headless. Claude Desktop and Cursor are unmeasured. See <A href="/docs/clients">client support</A>.</li>
+        <li>These are Claude Code numbers, headless. Claude Desktop and Cursor are unmeasured. See <A href="/docs/clients">client support</A>, and <A href={DESKTOP_TEST}>DESKTOP-TEST.md</A> for the five-minute protocol that would settle Desktop.</li>
         <li>The elicitation auto-cancel may be an artifact of a session with no interactive UI. The structural argument stands regardless; the {trials.shapes[2].retried}/{trials.shapes[2].n} might not.</li>
         <li>{trials.scored} trials is enough to separate &ldquo;works&rdquo; from &ldquo;does not work at all&rdquo;. It is not enough to rank things that all work.</li>
       </UL>

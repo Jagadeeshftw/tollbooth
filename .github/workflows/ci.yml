@@ -48,6 +48,11 @@ jobs:
       - name: Check dependency boundaries
         run: npm run check:boundaries
 
+      # The generated copies (README snippets, the video's theme and data, the
+      # harness results table) are only trustworthy if drift fails the build.
+      - name: Check generated copies
+        run: npm run check:generated
+
       - name: Build
         run: npm run build
 
