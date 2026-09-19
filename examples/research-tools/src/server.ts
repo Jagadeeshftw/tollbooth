@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { definePrice } from '@tollbooth/core';
 import type { EntitlementStore } from '@tollbooth/core';
 import { withPaywall } from '@tollbooth/mcp';
+import type { PaywallConfig } from '@tollbooth/mcp';
 import { MooveClient, MooveProvider } from '@tollbooth/moove';
 import { SqliteEntitlementStore } from '@tollbooth/store-sqlite';
 import { z } from 'zod';
@@ -55,6 +56,12 @@ export interface ServerOptions {
   /** Sustained calls per second per payment handle. */
   ratePerSecond?: number;
   burst?: number;
+  /**
+   * Extra paywall hooks, called after this server's own logging. Opt-in:
+   * http.ts passes a GatewayClient's hooks here when an ingest token is set,
+   * and nothing else about the server changes when it is not.
+   */
+  telemetry?: Pick<PaywallConfig, 'onChargeOpened' | 'onCall' | 'onSettlement'>;
 }
 
 /**
@@ -64,6 +71,7 @@ export interface ServerOptions {
  * McpServer is per-request, and that is just tool registration.
  */
 export function createServer(options: ServerOptions) {
+  const telemetry = options.telemetry;
   const store =
     options.store ??
     new SqliteEntitlementStore({
@@ -104,8 +112,11 @@ export function createServer(options: ServerOptions) {
     // without anyone having to read a transcript.
     onCall: (event) => {
       console.error('[tollbooth] ' + JSON.stringify({ evt: 'call', ...event }));
+      telemetry?.onCall?.(event);
     },
+    ...(telemetry?.onChargeOpened ? { onChargeOpened: telemetry.onChargeOpened } : {}),
     onSettlement: (outcome) => {
+      telemetry?.onSettlement?.(outcome);
       // Worth logging loudly: `underpaid` means somebody paid and got nothing,
       // and only a human can resolve it.
       if (outcome.status === 'underpaid' || outcome.status === 'partial') {

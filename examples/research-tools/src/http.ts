@@ -7,6 +7,7 @@
 import { createServer as createHttpServer } from 'node:http';
 
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { GatewayClient } from '@tollbooth/gateway-client';
 import { PostgresEntitlementStore } from '@tollbooth/store-postgres';
 
 import { createServer } from './server.js';
@@ -37,10 +38,43 @@ if (store) {
   console.error('[research-tools] store: sqlite (set DATABASE_URL for Postgres)');
 }
 
+/**
+ * Report to a Tollbooth gateway dashboard when both are set; run exactly as
+ * before when either is missing. Telemetry only: the gateway never sees the
+ * Moove key, a payment handle or a link id, and a gateway outage cannot fail
+ * a paid call.
+ */
+const gatewayEndpoint = process.env['TOLLBOOTH_GATEWAY_ENDPOINT'];
+const ingestToken = process.env['TOLLBOOTH_INGEST_TOKEN'];
+const gateway =
+  gatewayEndpoint && ingestToken
+    ? new GatewayClient({
+        endpoint: gatewayEndpoint,
+        ingestToken,
+        onDropped: (events, error) =>
+          console.error(`[research-tools] gateway dropped ${events.length} event(s)`, String(error)),
+      })
+    : undefined;
+if (gateway) {
+  gateway.start();
+  console.error(`[research-tools] gateway: reporting to ${new URL(gatewayEndpoint!).origin}`);
+} else {
+  console.error('[research-tools] gateway: off (set TOLLBOOTH_GATEWAY_ENDPOINT and TOLLBOOTH_INGEST_TOKEN)');
+}
+
 const { provider, buildServer } = createServer({
   apiKey,
   ...(process.env['MOOVE_API_BASE_URL'] ? { baseUrl: process.env['MOOVE_API_BASE_URL'] } : {}),
   ...(store ? { store } : { databasePath: process.env['TOLLBOOTH_DB'] ?? '/data/tollbooth.sqlite' }),
+  ...(gateway
+    ? {
+        telemetry: {
+          onChargeOpened: gateway.onChargeOpened,
+          onCall: gateway.onCall,
+          onSettlement: gateway.onSettlement,
+        },
+      }
+    : {}),
 });
 
 /** Where a person landing on the bare URL should be sent. */
@@ -111,9 +145,23 @@ const http = createHttpServer(async (req, res) => {
 });
 
 // The retry path settles almost everything; this catches what it missed.
+// Its outcomes go to the gateway too: a payer who never retries is settled
+// only here, and the paywall's own onSettlement never sees that.
 const reconciler = setInterval(() => {
-  provider.reconcile().catch((e) => console.error('[research-tools] reconcile failed', e));
+  provider
+    .reconcile()
+    .then((outcomes) => outcomes.forEach((o) => gateway?.onSettlement(o)))
+    .catch((e) => console.error('[research-tools] reconcile failed', e));
 }, 5 * 60 * 1000);
 reconciler.unref();
 
 http.listen(PORT, () => console.error(`[research-tools] listening on :${PORT}/mcp`));
+
+// A redeploy sends SIGTERM. Send whatever telemetry is still queued first,
+// but never let a slow or unreachable gateway hold the container open.
+process.once('SIGTERM', () => {
+  http.close();
+  const flushed = gateway?.stop() ?? Promise.resolve();
+  const cap = new Promise((resolve) => setTimeout(resolve, 5000).unref());
+  void Promise.race([flushed, cap]).finally(() => process.exit(0));
+});
