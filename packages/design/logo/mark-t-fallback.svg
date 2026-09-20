@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="currentColor" role="img" aria-label="Tollbooth">
+  <!--
+    FALLBACK. The generated T mark — crossbar as barrier arm, stem as post —
+    kept after the supplied artwork replaced it. Not referenced by anything;
+    here so the drawn-from-scratch mark is not lost.
+
+    Two shapes, one colour, no gradients and no stroke. It has to survive a 16px
+    browser tab, a black-and-white print and being knocked out of a dark tile,
+    and of everything tried it is the only one that stayed sharp at 16 while
+    still belonging to this project rather than to icon libraries in general.
+
+    Two things learned by rendering rather than reasoning: a base plate under
+    the stem turns the whole shape into an I-beam text cursor, so there isn't
+    one; and below about 48px the strokes thin out, so the small rasters use a
+    heavier variant of the same two shapes (see scripts/build-logo-assets.mjs).
+
+    The barrier reading arrives once you know the name, and the mark almost
+    always sits beside the word. That is an ordinary way for a monogram to work.
+
+    This file is the source. The favicons, the og:image and the React components
+    in site/ and video/ are all generated from it — see
+    scripts/build-logo-assets.mjs and scripts/sync-generated.mjs.
+  -->
+  <rect x="5" y="13" width="54" height="11" rx="5.5"/>
+  <rect x="26" y="24" width="12" height="37" rx="2"/>
+</svg>

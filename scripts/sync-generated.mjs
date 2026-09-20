@@ -159,37 +159,52 @@ for (const face of ['InterDisplay-Regular.ttf', 'InterDisplay-SemiBold.ttf', 'In
   console.log(`wrote video/public/fonts/${face}`);
 }
 
-// 1e. the mark -> a React component for the site, and one for the video
+// 1e. the artwork -> React components for the site and the video
 //
 // Same reason as the theme: neither can read a file at runtime, and the mark
 // has to be identical in a browser tab, a page header and the video's end
-// card. The source is packages/design/logo/mark.svg; the rasters (favicons,
-// og:image) come from the same file via scripts/build-logo-assets.mjs.
-const markSvg = readFileSync(join(ROOT, 'packages/design/logo/mark.svg'), 'utf8');
-const markShapes = markSvg
-  .split('\n')
-  .filter((l) => /^\s*<(rect|path|circle)/.test(l))
-  .map((l) => l.trim())
-  .join('\n      ');
-if (!markShapes) throw new Error('no shapes found in packages/design/logo/mark.svg');
+// card. The sources are packages/design/logo/{mark,lockup}.svg; the rasters
+// (favicons, og:image, social avatar) come from the same files via
+// scripts/build-logo-assets.mjs.
+function svgSource(file) {
+  const src = readFileSync(join(ROOT, file), 'utf8');
+  const open = src.indexOf('>', src.indexOf('<svg')) + 1;
+  const body = src
+    .slice(open, src.lastIndexOf('</svg>'))
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .trim()
+    .split('\n')
+    .map((l) => '    ' + l.trim())
+    .join('\n');
+  const viewBox = /viewBox="([^"]+)"/.exec(src)?.[1];
+  if (!body || !viewBox) throw new Error(`no drawable content or viewBox in ${file}`);
+  return { body, viewBox };
+}
 
-const markComponent = (extra) =>
-  '/* GENERATED from packages/design/logo/mark.svg — do not edit. Run: npm run sync */\n' +
-  extra +
-  'export const Mark = (props: React.SVGProps<SVGSVGElement>) => (\n' +
-  '  <svg\n' +
-  '    viewBox="0 0 64 64"\n' +
-  '    fill="currentColor"\n' +
-  '    xmlns="http://www.w3.org/2000/svg"\n' +
-  '    aria-hidden="true"\n' +
-  '    {...props}\n' +
-  '  >\n' +
-  `      ${markShapes}\n` +
-  '  </svg>\n' +
-  ');\n';
+const component = (name, file, extra) => {
+  const { body, viewBox } = svgSource(file);
+  return (
+    `/* GENERATED from ${file} — do not edit. Run: npm run sync */\n` +
+    extra +
+    `export const ${name} = (props: React.SVGProps<SVGSVGElement>) => (\n` +
+    `  <svg\n` +
+    `    viewBox="${viewBox}"\n` +
+    `    fill="currentColor"\n` +
+    `    xmlns="http://www.w3.org/2000/svg"\n` +
+    `    aria-hidden="true"\n` +
+    `    {...props}\n` +
+    `  >\n${body}\n  </svg>\n);\n`
+  );
+};
 
-sync(join(ROOT, 'site/components/mark.generated.tsx'), markComponent(''), 'site/components/mark.generated.tsx', 'source');
-sync(join(ROOT, 'video/src/mark.generated.tsx'), markComponent("import React from 'react';\n\n"), 'video/src/mark.generated.tsx', 'source');
+for (const [target, name, file, extra] of [
+  ['site/components/mark.generated.tsx', 'Mark', 'packages/design/logo/mark.svg', ''],
+  ['site/components/lockup.generated.tsx', 'Lockup', 'packages/design/logo/lockup.svg', ''],
+  ['video/src/mark.generated.tsx', 'Mark', 'packages/design/logo/mark.svg', "import React from 'react';\n\n"],
+  ['video/src/lockup.generated.tsx', 'Lockup', 'packages/design/logo/lockup.svg', "import React from 'react';\n\n"],
+]) {
+  sync(join(ROOT, target), component(name, file, extra), target, 'source');
+}
 
 // 2. snippets -> example README
 //

@@ -2,7 +2,7 @@ import React from 'react';
 
 import { Stage } from '../components';
 import { font, palette, type } from '../design';
-import { Mark } from '../mark.generated';
+import { Lockup } from '../lockup.generated';
 import { SITE } from '../measurements.generated';
 import { useElement } from '../motion';
 import type { BeatProps } from '../timeline';
@@ -15,26 +15,24 @@ export const EndCard: React.FC<BeatProps> = ({ durationInFrames: d }) => {
   return (
     <Stage>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-        {/* The mark lands first and the name follows it, so the last thing on
-            screen is the same shape that sits in the browser tab. */}
-        <div style={{ ...mark, marginBottom: 46, color: palette.fg, lineHeight: 0 }}>
-          <Mark width={132} height={132} />
+        {/* The supplied lockup carries the name and the tagline as artwork, so
+            the end card does not set them as type a second time. */}
+        <div style={{ ...mark, color: palette.fg, lineHeight: 0 }}>
+          <Lockup height={330} />
         </div>
 
-        <div style={wordmark}>
-          <div style={{ fontSize: 84, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1 }}>Tollbooth</div>
-          <div
-            style={{
-              fontFamily: font.mono,
-              fontSize: type.label,
-              letterSpacing: '0.16em',
-              textTransform: 'uppercase',
-              color: palette.brand,
-              marginTop: 18,
-            }}
-          >
-            A paywall for MCP servers
-          </div>
+        <div
+          style={{
+            ...wordmark,
+            fontFamily: font.mono,
+            fontSize: type.label,
+            letterSpacing: '0.16em',
+            textTransform: 'uppercase',
+            color: palette.brand,
+            marginTop: 26,
+          }}
+        >
+          A paywall for MCP servers
         </div>
 
         {/*

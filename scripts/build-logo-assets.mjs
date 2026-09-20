@@ -1,17 +1,25 @@
 #!/usr/bin/env node
 /**
- * Build every raster the mark is needed as, from packages/design/logo/mark.svg.
+ * Build every raster the brand is needed as, from the two vector sources in
+ * packages/design/logo/: mark.svg (the mark alone) and lockup.svg (mark, name
+ * and tagline).
  *
  *   node scripts/build-logo-assets.mjs
  *
  * Writes into site/public/: the favicons a browser asks for (.ico with 16/32/48
- * inside, plus the PNGs modern browsers prefer), the two phone icons, a
- * maskable icon for Android, and the og:image that renders when a link is
- * pasted into Discord, Telegram, Slack or X.
+ * inside, plus the PNGs modern browsers prefer), the phone icons, a maskable
+ * icon for Android, a social avatar with a solid background for Telegram, npm,
+ * GitHub and X, and the og:image that renders when a link is pasted somewhere.
+ *
+ * Every raster is produced in two steps: render the vector once at high
+ * resolution, then downsample that bitmap to each target size. Asking a browser
+ * to rasterise this mark straight to 16px closes its counters and leaves a
+ * blob; downsampling a large render keeps them open. That is the whole reason
+ * for the intermediate file.
  *
  * Rasterising needs a browser, so unlike `npm run sync` this is NOT wired into
  * CI — Chrome is not there. The outputs are committed instead, and this script
- * exists so they can be rebuilt identically when the mark changes.
+ * exists so they can be rebuilt identically when the artwork changes.
  *
  * Requires Google Chrome at the usual macOS path, or CHROME= pointing at any
  * Chromium binary.
@@ -26,33 +34,28 @@ const ROOT = join(fileURLToPath(import.meta.url), '..', '..');
 const OUT = join(ROOT, 'site/public');
 const CHROME = process.env['CHROME'] ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
-/** The mark's three shapes, lifted out of the source so they can be re-laid-out. */
-const markSource = readFileSync(join(ROOT, 'packages/design/logo/mark.svg'), 'utf8');
-const shapes = markSource
-  .split('\n')
-  .filter((l) => /^\s*<(rect|path|circle)/.test(l))
-  .join('\n');
-if (!shapes.trim()) throw new Error('no shapes found in mark.svg');
+/** Everything inside the <svg> element, comments stripped, plus its viewBox. */
+function inner(file) {
+  const src = readFileSync(join(ROOT, file), 'utf8');
+  const open = src.indexOf('>', src.indexOf('<svg')) + 1;
+  const close = src.lastIndexOf('</svg>');
+  const body = src.slice(open, close).replace(/<!--[\s\S]*?-->/g, '').trim();
+  if (!body) throw new Error(`no drawable content in ${file}`);
+  const viewBox = /viewBox="([^"]+)"/.exec(src)?.[1];
+  if (!viewBox) throw new Error(`no viewBox in ${file}`);
+  const [, , w, h] = viewBox.split(/[\s,]+/).map(Number);
+  return { body, viewBox, ratio: w / h };
+}
 
-/**
- * Optical sizing for 48px and below.
- *
- * At 16px the crossbar and stem both land on roughly one pixel and grey out,
- * which costs the crispness that made this mark the pick. This variant
- * thickens both and shortens the stem slightly so the T stays a T rather than
- * closing into a blob. Same two shapes, same proportions — heavier, not
- * different.
- */
-const smallShapes = `  <rect x="3" y="11" width="58" height="14" rx="7"/>
-  <rect x="25" y="25" width="14" height="36" rx="2"/>`;
+const MARK = inner('packages/design/logo/mark.svg');
+const LOCKUP = inner('packages/design/logo/lockup.svg');
 
 const work = mkdtempSync(join(tmpdir(), 'tollbooth-logo-'));
 mkdirSync(OUT, { recursive: true });
 
-/** Screenshot an SVG document at exactly width x height. Transparent unless `background`. */
-function raster(name, svg, width, height, background) {
-  const file = join(work, `${name}.svg`);
-  writeFileSync(file, svg);
+function shot(name, html, width, height, background) {
+  const file = join(work, `${name}.html`);
+  writeFileSync(file, html);
   const out = join(work, `${name}.png`);
   execFileSync(
     CHROME,
@@ -67,30 +70,47 @@ function raster(name, svg, width, height, background) {
     ],
     { stdio: ['ignore', 'ignore', 'ignore'] }
   );
-  return readFileSync(out);
+  return out;
 }
 
+const page = (bodyStyle, content) => `<html><body style="margin:0;${bodyStyle}">${content}</body></html>`;
+
 /**
- * The mark on its own, padded so it is not flush to the edge.
- * `pad` is a fraction of the icon's size on each side.
+ * A square icon: the art centred and padded, optionally on a background.
+ * `pad` is the fraction of the canvas left empty on each side. Rendered large,
+ * then downsampled — see the note at the top about counters closing.
  */
-const icon = (size, { pad = 0.12, fg = '#111111', bg = null, radius = 0, weight } = {}) => {
-  const inner = 64 / (1 - 2 * pad);
-  const offset = inner * pad;
-  const body = (weight ?? (size <= 48 ? 'small' : 'regular')) === 'small' ? smallShapes : shapes;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${inner} ${inner}">
-  ${bg ? `<rect width="${inner}" height="${inner}" rx="${radius}" fill="${bg}"/>` : ''}
-  <g transform="translate(${offset} ${offset})" fill="${fg}">
-${body}
-  </g>
-</svg>`;
-};
+function icon(name, art, size, { pad = 0.1, fg = '#111111', bg = null } = {}) {
+  const master = Math.min(1024, size * 16);
+  const box = Math.round(master * (1 - 2 * pad));
+  const w = art.ratio >= 1 ? box : Math.round(box * art.ratio);
+  const h = art.ratio >= 1 ? Math.round(box / art.ratio) : box;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${art.viewBox}" width="${w}" height="${h}" style="color:${fg};display:block">${art.body}</svg>`;
+  const big = shot(
+    `${name}-master`,
+    page(
+      `width:${master}px;height:${master}px;display:flex;align-items:center;justify-content:center;${bg ? `background:${bg};` : ''}`,
+      svg
+    ),
+    master,
+    master,
+    bg ? 'FFFFFFFF' : '00000000'
+  );
+  const small = shot(
+    name,
+    page('', `<img src="file://${big}" width="${size}" height="${size}" style="display:block">`),
+    size,
+    size,
+    '00000000'
+  );
+  return readFileSync(small);
+}
 
 /** ICO container. Each entry is a PNG, which every browser since IE11 reads. */
 function ico(entries) {
   const header = Buffer.alloc(6);
   header.writeUInt16LE(0, 0);
-  header.writeUInt16LE(1, 2); // type: icon
+  header.writeUInt16LE(1, 2);
   header.writeUInt16LE(entries.length, 4);
   const dir = Buffer.alloc(16 * entries.length);
   let offset = header.length + dir.length;
@@ -98,10 +118,8 @@ function ico(entries) {
     const at = i * 16;
     dir.writeUInt8(e.size >= 256 ? 0 : e.size, at + 0);
     dir.writeUInt8(e.size >= 256 ? 0 : e.size, at + 1);
-    dir.writeUInt8(0, at + 2); // palette
-    dir.writeUInt8(0, at + 3); // reserved
-    dir.writeUInt16LE(1, at + 4); // colour planes
-    dir.writeUInt16LE(32, at + 6); // bits per pixel
+    dir.writeUInt16LE(1, at + 4);
+    dir.writeUInt16LE(32, at + 6);
     dir.writeUInt32LE(e.png.length, at + 8);
     dir.writeUInt32LE(offset, at + 12);
     offset += e.png.length;
@@ -115,42 +133,44 @@ const write = (name, buf) => {
 };
 
 // --- favicons -------------------------------------------------------------
-// Dark ink on transparent: browsers composite onto their own tab background,
-// which is light in light mode and dark in dark mode — so the light-mode case
-// is the one that has to work, and a near-black mark works on both.
-const favicons = [16, 32, 48].map((size) => ({ size, png: raster(`favicon-${size}`, icon(size, { pad: 0.05 }), size, size) }));
+// Dark ink on transparent: a browser composites onto its own tab background.
+const favicons = [16, 32, 48].map((size) => ({ size, png: icon(`favicon-${size}`, MARK, size, { pad: 0.04 }) }));
 write('favicon.ico', ico(favicons));
 for (const f of favicons) write(`favicon-${f.size}.png`, f.png);
 
 // --- phones ---------------------------------------------------------------
-// iOS composites onto white and applies its own rounding, so this one ships a
-// background rather than transparency.
-write('apple-touch-icon.png', raster('apple', icon(180, { pad: 0.16, bg: '#ffffff' }), 180, 180));
-write('icon-192.png', raster('i192', icon(192, { pad: 0.1 }), 192, 192));
-write('icon-512.png', raster('i512', icon(512, { pad: 0.1 }), 512, 512));
-// Android maskable: everything outside the central 80% circle can be cropped.
-write('icon-maskable-512.png', raster('mask', icon(512, { pad: 0.22, bg: '#111111', fg: '#ffffff' }), 512, 512));
+// iOS composites onto white and rounds it itself, so this one ships a background.
+write('apple-touch-icon.png', icon('apple', MARK, 180, { pad: 0.16, bg: '#ffffff' }));
+write('icon-192.png', icon('i192', MARK, 192, { pad: 0.1 }));
+write('icon-512.png', icon('i512', MARK, 512, { pad: 0.1 }));
+// Android maskable: anything outside the central 80% circle can be cropped.
+write('icon-maskable-512.png', icon('mask', MARK, 512, { pad: 0.24, bg: '#111111', fg: '#ffffff' }));
+// The avatar Telegram, npm, GitHub and X show. Never transparent: each of them
+// composites onto a different colour, and a transparent PNG goes to mush on one
+// of them. No text either — at avatar size a tagline is a smudge.
+write('social-avatar-512.png', icon('avatar', MARK, 512, { pad: 0.18, bg: '#111111', fg: '#ffffff' }));
 
 // --- og:image -------------------------------------------------------------
 // 1200x630 is what Discord, Telegram, Slack and X all crop from. They render it
-// small, so this is deliberately four things and no more: the mark, the name,
-// one line of what it is, and the measurement that makes it worth a click.
-const og = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630"
-     font-family="Inter Display, Inter, ui-sans-serif, -apple-system, Segoe UI, Roboto, sans-serif">
-  <rect width="1200" height="630" fill="#0a0a0a"/>
-  <rect x="0" y="0" width="1200" height="6" fill="#14b8a6"/>
-  <g transform="translate(96 96) scale(1.75)" fill="#ffffff">
-${shapes}
-  </g>
-  <text x="96" y="330" font-size="76" font-weight="700" fill="#ffffff" letter-spacing="-1.5">Tollbooth</text>
-  <text x="96" y="392" font-size="34" fill="#a3a3a3">A paywall layer for MCP servers.</text>
-  <text x="96" y="470" font-size="30" fill="#e5e5e5" font-family="DM Mono, ui-monospace, SFMono-Regular, Menlo, monospace">
-    <tspan fill="#14b8a6">18/18</tspan><tspan fill="#737373"> · </tspan><tspan fill="#14b8a6">41/43</tspan><tspan fill="#737373"> · </tspan><tspan fill="#c2410c">0/10</tspan>
-  </text>
-  <text x="96" y="512" font-size="24" fill="#a3a3a3">Agents retry a payment challenge — 71 blind trials, measured before it was built.</text>
-  <text x="96" y="574" font-size="22" fill="#737373" font-family="DM Mono, ui-monospace, SFMono-Regular, Menlo, monospace">tollbooth.0xo.in</text>
-</svg>`;
-write('og-image.png', raster('og', og, 1200, 630, 'FF0A0A0A'));
+// small, so this is deliberately four things and no more: the lockup, one line
+// of what it is, the measurement, and the domain.
+const ogArt = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${LOCKUP.viewBox}" width="330" style="color:#ffffff;display:block">${LOCKUP.body}</svg>`;
+const og = page(
+  'width:1200px;height:630px;background:#0a0a0a;font-family:Inter Display,Inter,ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;position:relative',
+  `<div style="position:absolute;inset:0 0 auto 0;height:6px;background:#14b8a6"></div>
+   <div style="display:flex;align-items:center;gap:72px;padding:96px 96px 0">
+     ${ogArt}
+     <div>
+       <div style="font-size:34px;color:#a3a3a3;margin-bottom:28px">A paywall layer for MCP servers.</div>
+       <div style="font-family:DM Mono,ui-monospace,Menlo,monospace;font-size:34px">
+         <span style="color:#14b8a6">18/18</span><span style="color:#737373"> · </span><span style="color:#14b8a6">41/43</span><span style="color:#737373"> · </span><span style="color:#c2410c">0/10</span>
+       </div>
+       <div style="font-size:24px;color:#a3a3a3;margin-top:24px;max-width:520px;line-height:1.45">Agents retry a payment challenge — 71 blind trials, measured before it was built.</div>
+     </div>
+   </div>
+   <div style="position:absolute;left:96px;bottom:54px;font-family:DM Mono,ui-monospace,Menlo,monospace;font-size:22px;color:#737373">tollbooth.0xo.in</div>`
+);
+write('og-image.png', readFileSync(shot('og', og, 1200, 630, 'FF0A0A0A')));
 
 rmSync(work, { recursive: true, force: true });
 console.log('\nRebuild any time with: node scripts/build-logo-assets.mjs');
