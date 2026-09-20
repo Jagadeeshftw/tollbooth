@@ -1,3 +1,4 @@
+import { Explainer } from "@/components/explainer";
 import { A, Basis, H2, Mono, P, Strong, UL } from "@/components/docs/prose";
 import { REPO, trials } from "@/content/measurements";
 import type { DocMeta } from "../registry";
@@ -27,6 +28,13 @@ export default function Page() {
         runs. Tollbooth is the library that does the middle of that: the challenge, the
         handle, the entitlement, and the settlement.
       </P>
+
+      {/* The film says the same thing this page does, for anyone who would
+          rather watch it. Click-to-load: the poster costs a few KB, the film
+          only downloads if asked for. */}
+      <div className="my-8">
+        <Explainer />
+      </div>
 
       <H2 id="problem">The problem</H2>
       <P>

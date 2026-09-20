@@ -3,6 +3,7 @@ import { Hero } from "@/components/hero";
 import { Transcript } from "@/components/transcript";
 import { Flow } from "@/components/flow";
 import { Results } from "@/components/results";
+import { Watch } from "@/components/watch";
 import { Payers } from "@/components/payers";
 import { Quickstart } from "@/components/quickstart";
 
@@ -23,6 +24,8 @@ export default function Home() {
       <Flow />
       <DivideX />
       <Results />
+      <DivideX />
+      <Watch />
       <DivideX />
       <Payers />
       <DivideX />
