@@ -46,13 +46,15 @@ challenge's token bearer.
 
 ## Watch
 
+<!-- measured:WATCH (generated from site/content/measurements.ts) -->
 <p align="center">
-  <a href="https://tollbooth.0xo.in/#watch">
-    <img src="site/public/explainer-thumb.jpg" alt="Play the Tollbooth explainer — two and a half minutes, silent" width="640">
+  <a href="https://youtu.be/b6e7yKd9cKY">
+    <img src="site/public/explainer-thumb.jpg" alt="Play the Tollbooth explainer on YouTube" width="640">
   </a>
 </p>
 
-<p align="center"><sub>Two and a half minutes, silent. Every figure on screen comes from the same file the site reads.</sub></p>
+<p align="center"><sub>1:58 on YouTube. Every figure on screen comes from the same file the site reads.</sub></p>
+<!-- /measured:WATCH -->
 
 ## Quickstart
 
@@ -99,10 +101,13 @@ server.paidTool(
 
 ## Why Moove
 
+<!-- measured:MOOVE (generated from site/content/measurements.ts) -->
 The payer needs a wallet and nothing else — no Moove account, no signup, no KYC — and can
 pay from any of 37 chains in whatever token they already hold, which Moove routes to the
 settlement token the tool author chose. For a payment link the author receives the full
-amount: the 0.02% protocol fee is the payer's, and same-chain, same-token is free.
+amount: the payer's wallet is debited enough to deliver your amount in full. The 0.02% protocol fee is the payer's, and
+same-chain, same-token is free.
+<!-- /measured:MOOVE -->
 
 Most of all, a link settles straight to the author's own wallet. That is what makes
 "Tollbooth never holds your revenue" a property of the design rather than a promise.

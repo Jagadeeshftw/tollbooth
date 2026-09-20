@@ -223,7 +223,9 @@ for (const doc of ['examples/research-tools/README.md', 'README.md']) {
 // The harness README is where someone reads the numbers next to the code that
 // produced them, so it carried its own hand-typed copy of the same tables the
 // site renders — the one copy of these figures that could drift silently.
-const { trials, copyVariants } = await import(pathToFileURL(join(ROOT, 'site/content/measurements.ts')).href);
+const { trials, copyVariants, mooveDocumented, VIDEO_URL, VIDEO_RUNTIME } = await import(
+  pathToFileURL(join(ROOT, 'site/content/measurements.ts')).href
+);
 const pct = (part, whole) => (whole === 0 ? '0%' : `${Math.round((part / whole) * 100)}%`);
 const shapeRows = trials.shapes
   .map((s) => `| \`${s.shape}\` | ${s.n} | ${s.retried} | ${s.tokenExact} | **${s.delivered} (${pct(s.delivered, s.n)})** |`)
@@ -244,6 +246,44 @@ const rootReadmePath = join(ROOT, 'README.md');
 const rootReadme = readFileSync(rootReadmePath, 'utf8');
 if (rootReadme.includes('<!-- measured:SHAPES ')) {
   sync(rootReadmePath, replaceBlock(rootReadme, 'measured', 'SHAPES', shapesBlock, rootReadmePath), 'README.md results table');
+}
+
+// The explainer link. GitHub cannot play a video inline, so the README gets a
+// thumbnail that leaves for YouTube — pointed at the same URL the site uses.
+const watchBlock =
+  `<!-- measured:WATCH (generated from site/content/measurements.ts) -->\n` +
+  `<p align="center">\n` +
+  `  <a href="${VIDEO_URL}">\n` +
+  `    <img src="site/public/explainer-thumb.jpg" alt="Play the Tollbooth explainer on YouTube" width="640">\n` +
+  `  </a>\n` +
+  `</p>\n\n` +
+  `<p align="center"><sub>${VIDEO_RUNTIME} on YouTube. Every figure on screen comes from the same file the site reads.</sub></p>\n` +
+  `<!-- /measured:WATCH -->`;
+if (rootReadme.includes('<!-- measured:WATCH ')) {
+  sync(
+    rootReadmePath,
+    replaceBlock(readFileSync(rootReadmePath, 'utf8'), 'measured', 'WATCH', watchBlock, rootReadmePath),
+    'README.md watch link'
+  );
+}
+
+// What Moove documents, in the one paragraph that states it. These are
+// Moove's numbers, not ours, and they were the last figures anywhere in the
+// project still typed by hand.
+const mooveBlock =
+  `<!-- measured:MOOVE (generated from site/content/measurements.ts) -->\n` +
+  `The payer needs a wallet and nothing else — no Moove account, no signup, no KYC — and can\n` +
+  `pay from any of ${mooveDocumented.chains} chains in whatever token they already hold, which Moove routes to the\n` +
+  `settlement token the tool author chose. For a payment link the author receives the full\n` +
+  `amount: ${mooveDocumented.linkDeliversFullAmount}. The ${mooveDocumented.protocolFeeCrossChain} protocol fee is the payer's, and\n` +
+  `same-chain, same-token is ${mooveDocumented.sameChainSameToken}.\n` +
+  `<!-- /measured:MOOVE -->`;
+if (rootReadme.includes('<!-- measured:MOOVE ')) {
+  sync(
+    rootReadmePath,
+    replaceBlock(readFileSync(rootReadmePath, 'utf8'), 'measured', 'MOOVE', mooveBlock, rootReadmePath),
+    'README.md Moove figures'
+  );
 }
 
 const harnessPath = join(ROOT, 'packages/mcp/harness/README.md');

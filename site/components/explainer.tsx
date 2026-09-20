@@ -3,20 +3,26 @@
 import { useState } from "react";
 import Image from "next/image";
 
+import { VIDEO_ID, VIDEO_RUNTIME, VIDEO_URL } from "@/content/measurements";
+
 /**
- * The explainer, as a poster that becomes a player on click.
+ * The explainer, as a poster that becomes the YouTube player on click.
  *
- * Deliberately not an iframe and not an autoplaying `<video>`: nothing but a
- * ~60KB still is fetched until someone asks for the film. The `<video>` element
- * is only mounted after the click, which is also what lets it start playing
- * immediately — the gesture that mounts it is the gesture that permits sound.
+ * Deliberately not an iframe on load. An embedded player is ~1MB of scripts and
+ * a set of Google requests made on behalf of everyone who opens the page,
+ * whether or not they ever press play; this fetches a ~60KB still instead and
+ * creates the iframe only when someone asks for the film. `youtube-nocookie`
+ * and a local poster mean the first request to Google happens after the click,
+ * not before it.
+ *
+ * `autoplay=1` is safe here for the same reason: the click that mounts the
+ * iframe is the gesture that permits playback — and this cut has sound, so it
+ * matters that the player starts unmuted.
  */
 export const Explainer = ({
-  src = "/explainer.mp4",
   poster = "/explainer-poster.jpg",
-  runtimeLabel = "2:30",
+  runtimeLabel = VIDEO_RUNTIME,
 }: {
-  src?: string;
   poster?: string;
   runtimeLabel?: string;
 }) => {
@@ -25,22 +31,19 @@ export const Explainer = ({
   return (
     <div className="border-divide relative aspect-video w-full overflow-hidden rounded-xl border bg-black">
       {playing ? (
-        <video
+        <iframe
           className="h-full w-full"
-          src={src}
-          poster={poster}
-          controls
-          autoPlay
-          playsInline
-          preload="auto"
-        >
-          <track kind="captions" />
-        </video>
+          src={`https://www.youtube-nocookie.com/embed/${VIDEO_ID}?autoplay=1&rel=0&modestbranding=1`}
+          title="Tollbooth — paid MCP tools, paid for by a human, settled on any chain"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          referrerPolicy="strict-origin-when-cross-origin"
+          allowFullScreen
+        />
       ) : (
         <button
           type="button"
           onClick={() => setPlaying(true)}
-          aria-label="Play the explainer video"
+          aria-label="Play the explainer video on YouTube"
           className="group absolute inset-0 h-full w-full cursor-pointer"
         >
           <Image
@@ -61,10 +64,15 @@ export const Explainer = ({
             </span>
           </span>
           <span className="absolute bottom-3 right-3 rounded bg-black/70 px-2 py-1 font-mono text-xs text-white">
-            {runtimeLabel} · silent
+            {runtimeLabel}
           </span>
         </button>
       )}
+      <noscript>
+        <a href={VIDEO_URL} className="absolute inset-0 flex items-end justify-center p-4 text-sm text-white underline">
+          Watch the explainer on YouTube
+        </a>
+      </noscript>
     </div>
   );
 };

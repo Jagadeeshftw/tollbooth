@@ -19,6 +19,15 @@ export const HARNESS = `${REPO}/tree/main/packages/mcp/harness`;
 export const QUICKSTART = `${REPO}/tree/main/examples/research-tools`;
 /** The five-minute protocol for the one client still unmeasured. */
 export const DESKTOP_TEST = `${REPO}/blob/main/DESKTOP-TEST.md`;
+
+/**
+ * The narrated explainer, on YouTube. The silent 150s render in `video/` is the
+ * source this was cut from and stays in the repository; this is the one with a
+ * voice on it, and the one people are pointed at.
+ */
+export const VIDEO_ID = "b6e7yKd9cKY";
+export const VIDEO_URL = `https://youtu.be/${VIDEO_ID}`;
+export const VIDEO_RUNTIME = "1:58";
 export const SERVER = "https://tollbooth-server-production.up.railway.app";
 export const MOOVE = "https://moove.xyz";
 
