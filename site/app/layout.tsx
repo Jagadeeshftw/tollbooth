@@ -21,12 +21,34 @@ export const metadata: Metadata = {
     url: SITE,
     siteName: "Tollbooth",
     type: "website",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Tollbooth — a paywall layer for MCP servers. 18/18, 41/43, 0/10.",
+      },
+    ],
   },
   twitter: {
-    card: "summary",
+    // summary_large_image, not summary: this link is meant to be pasted into
+    // Discord, Telegram and X, where the large card is the one people read.
+    card: "summary_large_image",
     title: "Tollbooth — a paywall layer for MCP servers",
     description: "71 blind trials. 95–100% retry with structured and text challenges, 0% with elicitation.",
+    images: ["/og-image.png"],
   },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "16x16 32x32 48x48" },
+      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-16.png", type: "image/png", sizes: "16x16" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
+  manifest: "/site.webmanifest",
   alternates: { canonical: SITE },
   other: { "x-repo": REPO },
 };

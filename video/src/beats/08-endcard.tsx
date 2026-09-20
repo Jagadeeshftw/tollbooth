@@ -2,17 +2,25 @@ import React from 'react';
 
 import { Stage } from '../components';
 import { font, palette, type } from '../design';
+import { Mark } from '../mark.generated';
 import { SITE } from '../measurements.generated';
 import { useElement } from '../motion';
 import type { BeatProps } from '../timeline';
 
 export const EndCard: React.FC<BeatProps> = ({ durationInFrames: d }) => {
-  const wordmark = useElement(0, d);
-  const url = useElement(16, d);
+  const mark = useElement(0, d);
+  const wordmark = useElement(8, d);
+  const url = useElement(24, d);
 
   return (
     <Stage>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+        {/* The mark lands first and the name follows it, so the last thing on
+            screen is the same shape that sits in the browser tab. */}
+        <div style={{ ...mark, marginBottom: 46, color: palette.fg, lineHeight: 0 }}>
+          <Mark width={132} height={132} />
+        </div>
+
         <div style={wordmark}>
           <div style={{ fontSize: 84, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1 }}>Tollbooth</div>
           <div

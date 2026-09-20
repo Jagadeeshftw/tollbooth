@@ -159,6 +159,38 @@ for (const face of ['InterDisplay-Regular.ttf', 'InterDisplay-SemiBold.ttf', 'In
   console.log(`wrote video/public/fonts/${face}`);
 }
 
+// 1e. the mark -> a React component for the site, and one for the video
+//
+// Same reason as the theme: neither can read a file at runtime, and the mark
+// has to be identical in a browser tab, a page header and the video's end
+// card. The source is packages/design/logo/mark.svg; the rasters (favicons,
+// og:image) come from the same file via scripts/build-logo-assets.mjs.
+const markSvg = readFileSync(join(ROOT, 'packages/design/logo/mark.svg'), 'utf8');
+const markShapes = markSvg
+  .split('\n')
+  .filter((l) => /^\s*<(rect|path|circle)/.test(l))
+  .map((l) => l.trim())
+  .join('\n      ');
+if (!markShapes) throw new Error('no shapes found in packages/design/logo/mark.svg');
+
+const markComponent = (extra) =>
+  '/* GENERATED from packages/design/logo/mark.svg — do not edit. Run: npm run sync */\n' +
+  extra +
+  'export const Mark = (props: React.SVGProps<SVGSVGElement>) => (\n' +
+  '  <svg\n' +
+  '    viewBox="0 0 64 64"\n' +
+  '    fill="currentColor"\n' +
+  '    xmlns="http://www.w3.org/2000/svg"\n' +
+  '    aria-hidden="true"\n' +
+  '    {...props}\n' +
+  '  >\n' +
+  `      ${markShapes}\n` +
+  '  </svg>\n' +
+  ');\n';
+
+sync(join(ROOT, 'site/components/mark.generated.tsx'), markComponent(''), 'site/components/mark.generated.tsx', 'source');
+sync(join(ROOT, 'video/src/mark.generated.tsx'), markComponent("import React from 'react';\n\n"), 'video/src/mark.generated.tsx', 'source');
+
 // 2. snippets -> example README
 //
 // Imported, not read: the snippets are template literals over REPO and SERVER
@@ -170,14 +202,21 @@ const grab = (name) => {
   if (typeof value !== 'string') throw new Error(`snippet ${name} is not an exported string`);
   return value;
 };
-const readmePath = join(ROOT, 'examples/research-tools/README.md');
-let next = readFileSync(readmePath, 'utf8');
 const block = (name, lang, body) =>
   `<!-- snippet:${name} (generated from site/content/snippets.ts) -->\n\`\`\`${lang}\n${body}\n\`\`\`\n<!-- /snippet:${name} -->`;
-for (const [name, lang] of [['RUN', 'bash'], ['TOOL', 'ts'], ['CLIENT', 'json']]) {
-  next = replaceBlock(next, 'snippet', name, block(name, lang, grab(name)), readmePath);
+
+// Any document carrying a snippet marker gets that snippet, so the root README
+// and the example README cannot say different things about the same command.
+const LANGS = { RUN: 'bash', TOOL: 'ts', CLIENT: 'json' };
+for (const doc of ['examples/research-tools/README.md', 'README.md']) {
+  const path = join(ROOT, doc);
+  let next = readFileSync(path, 'utf8');
+  for (const [name, lang] of Object.entries(LANGS)) {
+    if (!next.includes(`<!-- snippet:${name} `)) continue;
+    next = replaceBlock(next, 'snippet', name, block(name, lang, grab(name)), path);
+  }
+  sync(path, next, `${doc} snippets`);
 }
-sync(readmePath, next, 'examples/research-tools/README.md snippets');
 
 // 3. the trial results -> the harness README
 //
@@ -196,6 +235,17 @@ const variantRows = copyVariants.rows
     return `| ${r.id} (${intent}) | ${r.retried}/${r.n}${confirmation} |`;
   })
   .join('\n');
+// The same table the README leads with. One source, two documents.
+const shapesBlock =
+  `<!-- measured:SHAPES (generated from site/content/measurements.ts) -->\n` +
+  `| Challenge shape | n | retried | token exact | delivered |\n| --- | ---: | ---: | ---: | ---: |\n${shapeRows}\n` +
+  `<!-- /measured:SHAPES -->`;
+const rootReadmePath = join(ROOT, 'README.md');
+const rootReadme = readFileSync(rootReadmePath, 'utf8');
+if (rootReadme.includes('<!-- measured:SHAPES ')) {
+  sync(rootReadmePath, replaceBlock(rootReadme, 'measured', 'SHAPES', shapesBlock, rootReadmePath), 'README.md results table');
+}
+
 const harnessPath = join(ROOT, 'packages/mcp/harness/README.md');
 const resultsBlock =
   `<!-- measured:RESULTS (generated from site/content/measurements.ts) -->\n` +

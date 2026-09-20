@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="currentColor" role="img" aria-label="Tollbooth">
+  <!--
+    The Tollbooth mark: a barrier arm at 45 degrees, caught mid-lift.
+
+    Three shapes, one colour, no gradients and no stroke — it has to survive a
+    16px browser tab, a black-and-white print and being knocked out of a dark
+    tile. The road is load-bearing: a post with a diagonal on top reads as a
+    hook at every angle, and the horizontal under it is what makes the same
+    shapes read as a barrier over a road. The arm is at 45 because the arm is
+    *moving* — something blocked, someone paid, it lifts.
+
+    This file is the source. Everything else — the favicons, the og:image, the
+    React components in site/ and video/ — is generated from it. See
+    scripts/build-logo-assets.mjs and scripts/sync-generated.mjs.
+  -->
+  <rect x="2" y="54" width="60" height="8" rx="4"/>
+  <rect x="9" y="30" width="12" height="24" rx="2"/>
+  <rect x="15" y="27.5" width="45" height="9" rx="4.5" transform="rotate(-45 15 32)"/>
+</svg>
