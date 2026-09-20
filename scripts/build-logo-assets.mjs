@@ -37,14 +37,14 @@ if (!shapes.trim()) throw new Error('no shapes found in mark.svg');
 /**
  * Optical sizing for 48px and below.
  *
- * At 16px the road in the full mark lands on roughly one pixel and greys out to
- * nothing, which costs exactly the element that stops the shape reading as a
- * hook. This variant thickens the road, post and arm so all three survive the
- * downsample. Same three shapes, same 45 degrees — heavier, not different.
+ * At 16px the crossbar and stem both land on roughly one pixel and grey out,
+ * which costs the crispness that made this mark the pick. This variant
+ * thickens both and shortens the stem slightly so the T stays a T rather than
+ * closing into a blob. Same two shapes, same proportions — heavier, not
+ * different.
  */
-const smallShapes = `  <rect x="2" y="51" width="60" height="11" rx="5.5"/>
-  <rect x="8" y="28" width="14" height="23" rx="2"/>
-  <rect x="15" y="26" width="45" height="11" rx="5.5" transform="rotate(-45 15 31.5)"/>`;
+const smallShapes = `  <rect x="3" y="11" width="58" height="14" rx="7"/>
+  <rect x="25" y="25" width="14" height="36" rx="2"/>`;
 
 const work = mkdtempSync(join(tmpdir(), 'tollbooth-logo-'));
 mkdirSync(OUT, { recursive: true });

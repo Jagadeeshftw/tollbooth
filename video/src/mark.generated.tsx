@@ -9,8 +9,7 @@ export const Mark = (props: React.SVGProps<SVGSVGElement>) => (
     aria-hidden="true"
     {...props}
   >
-      <rect x="2" y="54" width="60" height="8" rx="4"/>
-      <rect x="9" y="30" width="12" height="24" rx="2"/>
-      <rect x="15" y="27.5" width="45" height="9" rx="4.5" transform="rotate(-45 15 32)"/>
+      <rect x="5" y="13" width="54" height="11" rx="5.5"/>
+      <rect x="26" y="24" width="12" height="37" rx="2"/>
   </svg>
 );
