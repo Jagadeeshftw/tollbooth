@@ -143,7 +143,13 @@ function handleWebhookEvent(event: ReturnType<typeof parseWebhookEvent>): void {
         }
         gateway?.onSettlement(result.outcome);
         console.error(
-          `[tollbooth] ${JSON.stringify({ evt: 'webhook', id: event.id, type: event.type, outcome: result.outcome.status })}`
+          `[tollbooth] ${JSON.stringify({
+            evt: 'webhook',
+            id: event.id,
+            type: event.type,
+            outcome: result.outcome.status,
+            at: new Date().toISOString(),
+          })}`
         );
       })
       .catch((error) => console.error(`[research-tools] webhook settle failed for ${event.id}`, error));
@@ -180,6 +186,7 @@ const http = createHttpServer(async (req, res) => {
     return;
   }
   if (req.url === '/moove/webhook') {
+    const receivedAt = Date.now();
     if (req.method !== 'POST') {
       res.writeHead(405, { allow: 'POST' }).end();
       return;
@@ -220,15 +227,27 @@ const http = createHttpServer(async (req, res) => {
     }
 
     const event = parseWebhookEvent(raw);
-    // Every event id is logged, delivered or not, so a duplicate would be
-    // visible in the log before it is worth building a table to catch.
-    console.error(
-      `[tollbooth] ${JSON.stringify({ evt: 'webhook_received', id: event?.id ?? headerOf(EVENT_ID_HEADER) ?? null, type: event?.type ?? null })}`
-    );
 
     // Acknowledge first; settle after. Any 2xx ends the delivery.
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ received: true }));
+
+    // Logged after the ack, so measuring does not become part of what is
+    // measured. Every event id is recorded, delivered or not: a duplicate
+    // shows up here before it is worth a table to catch it, and the arrival
+    // time and ack latency are the only record of how this endpoint behaved —
+    // Moove's console shows its own side of the delivery, not ours.
+    console.error(
+      `[tollbooth] ${JSON.stringify({
+        evt: 'webhook_received',
+        id: event?.id ?? headerOf(EVENT_ID_HEADER) ?? null,
+        type: event?.type ?? null,
+        at: new Date().toISOString(),
+        ackMs: Date.now() - receivedAt,
+        signedAt: headerOf(TIMESTAMP_HEADER) ?? null,
+      })}`
+    );
+
     handleWebhookEvent(event);
     return;
   }
