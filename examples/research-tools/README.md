@@ -127,6 +127,43 @@ a client at the deployed instance:
 have already paid for. A redeploy without a volume takes their credits with
 them, and there is no refund path.
 
+### Webhooks: settling on an event instead of a poll
+
+Set `MOOVE_WEBHOOK_SECRET` and the server accepts deliveries at
+`POST /moove/webhook`. Without it the route answers `503` and settlement runs
+on polling alone, exactly as it did before.
+
+Register the endpoint in the Moove console — `moove.xyz/business/manage/webhooks`.
+There is no API for it, deliberately: a key that could register a destination
+could quietly copy every settled payment somewhere its holder controls. The
+signing secret is shown **once**, starts with `whsec_`, and cannot be rotated or
+re-read; to replace it you add a second endpoint and delete the first.
+
+What the handler does, and why:
+
+- **Verifies before anything else.** HMAC-SHA256 over `{timestamp}.{raw body}`,
+  compared in constant time, with the raw bytes — not a re-serialisation, which
+  would change key order and break the digest. Unsigned, mis-signed or stale
+  (over 300s) is answered `401`: the URL is public, so those are hostile rather
+  than malformed.
+- **Acknowledges in milliseconds, settles afterwards.** Moove allows 10 seconds
+  and retries anything that is not a 2xx, so a slow database would manufacture
+  its own duplicate deliveries.
+- **Treats the event as a trigger, never as evidence.** It re-reads the link
+  with the public `GET` and settles through the same `settleCharge` the poll
+  path uses, so one piece of code decides what a payment bought. Nothing is
+  taken from the payload's `receivedAmount`.
+- **Survives repeats and reordering.** A single-use link fires
+  `payment_link.transaction.succeeded` and `payment_link.completed` separately
+  and in either order, and delivery is at-least-once. All of those converge on
+  `claimSettlement`, which admits exactly one grant per charge. Every event id
+  is logged, so a genuine duplicate is visible without a table to catch it.
+
+**Keep the reconciler running.** Webhooks do not replace it: expiry and
+deactivation send no event at all, a failed delivery is abandoned after about
+15 hours with no replay, and a disabled endpoint does not buffer. Polling is how
+those gaps close.
+
 ## The tools
 
 | Tool | Cost | What it does |

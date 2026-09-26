@@ -109,7 +109,7 @@ export const mooveDocumented = {
  * before trusting an old date here; this is a snapshot, not a live query.
  */
 export const built = {
-  measuredOn: "2026-09-20",
+  measuredOn: "2026-09-26",
   method:
     "packagesPublished: counted on npmjs.com under the @tollbooth scope. Tests: `npm run test` across " +
     "every workspace (core, gateway-client, gateway-server, mcp, moove, store-postgres, store-sqlite, " +
@@ -118,9 +118,9 @@ export const built = {
     "dashboard Postgres suites, which need their own connection strings and are skipped, never failed, " +
     "when those are absent.",
   packagesPublished: 6,
-  testsPassing: 386,
+  testsPassing: 404,
   testsSkipped: 9,
-  testsTotal: 395,
+  testsTotal: 413,
   testFailures: 0,
   /** EntitlementStore backends, conformance-tested identically against the same suite. */
   entitlementStoreBackends: ["in-memory", "SQLite", "Postgres"],

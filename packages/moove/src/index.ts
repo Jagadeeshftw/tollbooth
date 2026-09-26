@@ -49,7 +49,23 @@ export {
   NONCE_PREFIX,
   buildChargeDescription,
 } from './provider.js';
-export type { MooveProviderOptions, RemoteConfigApplyResultLike, RemotePriceUpdateLike } from './provider.js';
+export type {
+  MooveProviderOptions,
+  RemoteConfigApplyResultLike,
+  RemotePriceUpdateLike,
+  WebhookSettlementResult,
+} from './provider.js';
+
+export {
+  DEFAULT_TOLERANCE_SECONDS,
+  EVENT_ID_HEADER,
+  SIGNATURE_HEADER,
+  TIMESTAMP_HEADER,
+  nonceFromDescription,
+  parseWebhookEvent,
+  verifyWebhookSignature,
+} from './webhook.js';
+export type { MooveWebhookEvent, MooveWebhookEventType, MooveWebhookTransaction } from './webhook.js';
 export type { PaymentProvider, SettlementOutcome } from '@tollbooth/core';
 
 export { AdaptiveRateLimiter, backoffDelayMs } from './ratelimit.js';

@@ -5,9 +5,17 @@
  * which is what the newer protocol revisions assume anyway.
  */
 import { createServer as createHttpServer } from 'node:http';
+import type { IncomingMessage } from 'node:http';
 
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { GatewayClient } from '@tollbooth/gateway-client';
+import {
+  EVENT_ID_HEADER,
+  SIGNATURE_HEADER,
+  TIMESTAMP_HEADER,
+  parseWebhookEvent,
+  verifyWebhookSignature,
+} from '@tollbooth/moove';
 import { PostgresEntitlementStore } from '@tollbooth/store-postgres';
 
 import { createServer } from './server.js';
@@ -77,6 +85,71 @@ const { provider, buildServer } = createServer({
     : {}),
 });
 
+/**
+ * Moove webhooks: the push half of settlement.
+ *
+ * Registered once in the Moove console — there is no API for it, deliberately,
+ * since a key that could register a destination could copy every settled
+ * payment somewhere its holder controls. Without the secret this route is off
+ * and polling carries settlement alone, exactly as before.
+ */
+const webhookSecret = process.env['MOOVE_WEBHOOK_SECRET'];
+const WEBHOOK_MAX_BYTES = 64 * 1024;
+
+if (webhookSecret) {
+  console.error('[research-tools] webhooks: on, POST /moove/webhook (signature required)');
+} else {
+  console.error('[research-tools] webhooks: off (set MOOVE_WEBHOOK_SECRET); settlement falls back to polling');
+}
+
+/** Read the body as bytes. The signature covers what was sent, not a re-serialisation of it. */
+function readRawBody(req: IncomingMessage, limit = WEBHOOK_MAX_BYTES): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > limit) {
+        resolve(null);
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', () => resolve(null));
+  });
+}
+
+/**
+ * The work a delivery triggers, run after the response has gone out.
+ *
+ * Moove gives the request 10 seconds and retries anything that is not a 2xx,
+ * so settling inline would turn one slow Neon query into a duplicate delivery
+ * of our own making. If this process dies between the 200 and the settle, the
+ * reconciler finds the charge anyway — that is what it is for.
+ */
+function handleWebhookEvent(event: ReturnType<typeof parseWebhookEvent>): void {
+  if (!event) return;
+  setImmediate(() => {
+    void provider
+      .settleFromWebhook(event)
+      .then((result) => {
+        if (!result.handled) {
+          console.error(
+            `[tollbooth] ${JSON.stringify({ evt: 'webhook', id: event.id, type: event.type, handled: false, reason: result.reason })}`
+          );
+          return;
+        }
+        gateway?.onSettlement(result.outcome);
+        console.error(
+          `[tollbooth] ${JSON.stringify({ evt: 'webhook', id: event.id, type: event.type, outcome: result.outcome.status })}`
+        );
+      })
+      .catch((error) => console.error(`[research-tools] webhook settle failed for ${event.id}`, error));
+  });
+}
+
 /** Where a person landing on the bare URL should be sent. */
 const LANDING_URL = process.env['TOLLBOOTH_LANDING_URL'] ?? 'https://tollbooth.0xo.in';
 const REPO_URL = 'https://github.com/Jagadeeshftw/tollbooth';
@@ -106,6 +179,60 @@ const http = createHttpServer(async (req, res) => {
     );
     return;
   }
+  if (req.url === '/moove/webhook') {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { allow: 'POST' }).end();
+      return;
+    }
+    if (!webhookSecret) {
+      // Nothing can be verified, so nothing is accepted. 503 rather than 404:
+      // a misconfigured deployment should look broken, not absent.
+      res.writeHead(503, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'webhooks not configured' }));
+      return;
+    }
+
+    const raw = await readRawBody(req);
+    if (!raw) {
+      res.writeHead(413).end();
+      return;
+    }
+
+    const headerOf = (name: string) => {
+      const value = req.headers[name];
+      return Array.isArray(value) ? value[0] : value;
+    };
+
+    // An unsigned, mis-signed or stale delivery is hostile, not malformed: the
+    // URL is public and anyone can POST to it.
+    if (
+      !verifyWebhookSignature({
+        rawBody: raw,
+        signature: headerOf(SIGNATURE_HEADER),
+        timestamp: headerOf(TIMESTAMP_HEADER),
+        secret: webhookSecret,
+      })
+    ) {
+      console.error(`[research-tools] webhook rejected: bad signature or stale timestamp (${headerOf(EVENT_ID_HEADER) ?? 'no id'})`);
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'invalid signature' }));
+      return;
+    }
+
+    const event = parseWebhookEvent(raw);
+    // Every event id is logged, delivered or not, so a duplicate would be
+    // visible in the log before it is worth building a table to catch.
+    console.error(
+      `[tollbooth] ${JSON.stringify({ evt: 'webhook_received', id: event?.id ?? headerOf(EVENT_ID_HEADER) ?? null, type: event?.type ?? null })}`
+    );
+
+    // Acknowledge first; settle after. Any 2xx ends the delivery.
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ received: true }));
+    handleWebhookEvent(event);
+    return;
+  }
+
   if (req.url === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(

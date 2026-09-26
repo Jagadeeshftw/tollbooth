@@ -25,6 +25,8 @@ import type {
 
 import type { MooveClient, MoovePaymentLink } from './client.js';
 import { isTerminalStatus, shouldPoll } from './poller.js';
+import { nonceFromDescription } from './webhook.js';
+import type { MooveWebhookEvent } from './webhook.js';
 
 /**
  * Structurally identical to `@tollbooth/gateway-client`'s `RemotePriceUpdate`
@@ -53,6 +55,20 @@ export const NONCE_PREFIX = 'tb_';
 
 /** Moove caps `description` at 500 characters. */
 export const MAX_DESCRIPTION_LENGTH = 500;
+
+/**
+ * What a webhook delivery did. `handled: false` is an ordinary outcome, not an
+ * error: endpoints are per Moove account, so a server receives events about
+ * links belonging to every other server on the same account.
+ */
+export type WebhookSettlementResult =
+  | { handled: true; outcome: SettlementOutcome }
+  | {
+      handled: false;
+      /** `no-nonce`: not one of our links. `unknown-charge`: ours, but not this process's store. `link-mismatch`: the description named a charge opened against a different link. */
+      reason: 'no-nonce' | 'unknown-charge' | 'link-mismatch';
+      paymentLinkId: string;
+    };
 
 /**
  * How long a checkout stays payable.
@@ -292,11 +308,22 @@ export class MooveProvider implements PaymentProvider {
     if (!charge) throw new Error(`no charge with nonce ${nonce}`);
 
     if (charge.status === 'settled') return { status: 'already_granted', charge };
-    if (charge.status === 'abandoned') return { status: 'expired', charge };
 
     const now = this.#now();
-    if (now >= charge.expiresAt) {
-      await this.#store.updateCharge(nonce, { status: 'abandoned' });
+    const lapsed = charge.status === 'abandoned' || now >= charge.expiresAt;
+
+    // A lapsed charge is normally closed without asking Moove: the reconciler
+    // sweeps many at once and an expiry is not evidence of anything.
+    //
+    // `force` means the caller has evidence — a webhook saying this link was
+    // paid — and then the expiry must not win. A payment that lands in the last
+    // second of the hour is still a payment, and we cannot refund it, so
+    // abandoning it would take someone's money and give them nothing. With
+    // evidence in hand we ask Moove and honour what it says.
+    if (lapsed && !options.force) {
+      if (charge.status !== 'abandoned') {
+        await this.#store.updateCharge(nonce, { status: 'abandoned' });
+      }
       return { status: 'expired', charge: { ...charge, status: 'abandoned' } };
     }
 
@@ -400,6 +427,46 @@ export class MooveProvider implements PaymentProvider {
     }
 
     return { status: 'granted', charge: settled, entitlementId: entitlement.id };
+  }
+
+  /**
+   * Settle from a Moove webhook delivery.
+   *
+   * The event is only ever a *trigger*: it says something happened to a link,
+   * and this goes and asks Moove what. Nothing in the payload is trusted for
+   * the decision — not `receivedAmount`, not `status` — because then two code
+   * paths would decide what a payment bought, and they would eventually
+   * disagree. `settleCharge` re-reads the link and applies the same price
+   * snapshot and tolerance band the poll path does.
+   *
+   * Both event types are handled identically and deliberately so. A single-use
+   * link fires `transaction.succeeded` and `completed` separately and in
+   * either order, and a duplicate of either is expected: delivery is
+   * at-least-once. All four orderings converge here, and `claimSettlement`
+   * admits exactly one grant per charge however many times it is called.
+   *
+   * Returns why it did nothing, rather than throwing, when an event is not
+   * about a charge this process knows: another server on the same Moove
+   * account receives the same events, since endpoints are registered per
+   * account and every endpoint gets every event.
+   */
+  async settleFromWebhook(event: MooveWebhookEvent): Promise<WebhookSettlementResult> {
+    const { paymentLinkId, description } = event.data;
+
+    const nonce = nonceFromDescription(description);
+    if (!nonce) return { handled: false, reason: 'no-nonce', paymentLinkId };
+
+    const charge = await this.#store.getCharge(nonce);
+    if (!charge) return { handled: false, reason: 'unknown-charge', paymentLinkId };
+
+    // A description is free text; a link id is not. The nonce says which charge
+    // to look at, and this says the charge really is the one Moove is talking
+    // about — so a description naming someone else's nonce settles nothing.
+    if (charge.providerRef !== paymentLinkId) {
+      return { handled: false, reason: 'link-mismatch', paymentLinkId };
+    }
+
+    return { handled: true, outcome: await this.settleCharge(nonce, { force: true }) };
   }
 
   /**
