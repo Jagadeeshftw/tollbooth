@@ -11,6 +11,7 @@
  *   site/content/measurements.ts   ->  video/src/measurements.generated.ts
  *   site/fonts/inter-display/*     ->  video/public/fonts/
  *   site/content/snippets.ts       ->  examples/research-tools/README.md (between markers)
+ *   site/content/snippets.ts       ->  README.md, packages/mcp/README.md (between markers)
  *   site/content/measurements.ts   ->  packages/mcp/harness/README.md (between markers)
  *
  * The site cannot import outside its own directory on Vercel, the example
@@ -220,10 +221,31 @@ const grab = (name) => {
 const block = (name, lang, body) =>
   `<!-- snippet:${name} (generated from site/content/snippets.ts) -->\n\`\`\`${lang}\n${body}\n\`\`\`\n<!-- /snippet:${name} -->`;
 
-// Any document carrying a snippet marker gets that snippet, so the root README
-// and the example README cannot say different things about the same command.
-const LANGS = { RUN: 'bash', TOOL: 'ts', CLIENT: 'json' };
-for (const doc of ['examples/research-tools/README.md', 'README.md']) {
+// The install line has to install everything the quickstart code imports.
+// 0.1.1 shipped a hero line that left out the MCP SDK, and READMEs whose
+// install lines left out the provider and the store: every one of them was
+// "correct" on its own, and none of them could run the code beside it.
+{
+  const imported = new Set();
+  for (const name of ['WITH_PAYWALL', 'TOOL']) {
+    for (const [, spec] of grab(name).matchAll(/from '([^']+)'/g)) {
+      if (spec.startsWith('.') || spec.startsWith('node:')) continue;
+      const parts = spec.split('/');
+      imported.add(spec.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0]);
+    }
+  }
+  const installed = new Set(grab('INSTALL').replace(/^npm install\s+/, '').split(/\s+/).map((p) => p.replace(/(.)@.*$/, '$1')));
+  const missing = [...imported].filter((p) => !installed.has(p));
+  if (missing.length) {
+    console.error(`INSTALL does not install ${missing.join(', ')}, which the quickstart snippets import. Fix site/content/snippets.ts.`);
+    process.exit(1);
+  }
+}
+
+// Any document carrying a snippet marker gets that snippet, so the READMEs
+// cannot say different things about the same command.
+const LANGS = { INSTALL: 'bash', RUN: 'bash', WITH_PAYWALL: 'ts', TOOL: 'ts', CLIENT: 'json' };
+for (const doc of ['examples/research-tools/README.md', 'README.md', 'packages/mcp/README.md']) {
   const path = join(ROOT, doc);
   let next = readFileSync(path, 'utf8');
   for (const [name, lang] of Object.entries(LANGS)) {

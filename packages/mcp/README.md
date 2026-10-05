@@ -8,8 +8,15 @@ A paid tool call with no payment handle mints one, opens a checkout, and returns
 
 ## Install
 
+<!-- snippet:INSTALL (generated from site/content/snippets.ts) -->
 ```bash
-npm install @tollbooth/mcp @modelcontextprotocol/sdk
+npm install @tollbooth/mcp @tollbooth/core @tollbooth/moove @tollbooth/store-sqlite @modelcontextprotocol/sdk zod
+```
+<!-- /snippet:INSTALL -->
+
+`@modelcontextprotocol/sdk` (from 1.23.0) and `zod` (3.25.3 or later, or 4) are peer dependencies: the paid tool's schema is written in your copy of zod and registered on your copy of the SDK. The other three packages are the price model, the Moove provider and a store.
+
+```bash
 export MOOVE_API_KEY=mk_live_...   # from https://www.moove.xyz/dashboard/api-keys
 ```
 
@@ -38,7 +45,7 @@ server.paidTool(
   { sku: 'search', cost: 1 },
   { query: z.string() },
   { readOnlyHint: true },
-  async (args) => ({ content: [{ type: 'text', text: `results for "${args.query}"` }] })
+  async (args) => ({ content: [{ type: 'text', text: 'results for ' + args.query }] })
 );
 ```
 

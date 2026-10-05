@@ -1,6 +1,6 @@
 import { A, Code, H2, Mono, Note, P, Strong, UL } from "@/components/docs/prose";
 import { QUICKSTART } from "@/content/measurements";
-import { CLIENT, RUN, TOOL, WITH_PAYWALL } from "@/content/snippets";
+import { CLIENT, INSTALL, RUN, TOOL, WITH_PAYWALL } from "@/content/snippets";
 import type { DocMeta } from "../registry";
 
 export const meta: DocMeta = {
@@ -52,6 +52,13 @@ export default function Page() {
       </P>
 
       <H2 id="own">Make your own tool paid</H2>
+      <P>Install the packages from npm:</P>
+      <Code title="shell">{INSTALL}</Code>
+      <P>
+        <Mono>@modelcontextprotocol/sdk</Mono> and <Mono>zod</Mono> are peer dependencies,
+        so the paid tool&rsquo;s schema is written in your copy of zod and registered on your
+        copy of the SDK. Zod 3.25.3 or later and Zod 4 both work, as does any SDK from 1.23.0.
+      </P>
       <P>Wrap the server once:</P>
       <Code title="server.ts">{WITH_PAYWALL}</Code>
       <P>

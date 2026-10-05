@@ -8,7 +8,9 @@ import type {
   Subject,
   SubjectRecord,
 } from '@tollbooth/core';
-import { z } from 'zod';
+import * as z3 from 'zod/v3';
+import * as z4 from 'zod/v4';
+import type * as z4core from 'zod/v4/core';
 
 import type { Challenge, ChallengeResult, RendererSet } from './challenge.js';
 import { composeChallenge } from './challenge.js';
@@ -25,6 +27,41 @@ export interface TollboothCallContext {
 
 /** The tool argument the agent carries the handle back in. */
 export const DEFAULT_ARGUMENT_NAME = 'tollboothToken';
+
+/**
+ * One field of a tool's input schema, in either Zod flavour.
+ *
+ * The MCP SDK (from 1.23.0) accepts a shape written in Zod 3 or in Zod 4, but
+ * not one that mixes them. Both `zod@^3.25.3` and `zod@^4` ship the two flavours
+ * as `zod/v3` and `zod/v4`, so whichever the server author installed, this
+ * package can build its own field in the flavour their shape already uses.
+ */
+export type ZodSchemaCompat = z3.ZodTypeAny | z4core.$ZodType;
+export type ZodRawShapeCompat = Record<string, ZodSchemaCompat>;
+
+const HANDLE_DESCRIPTION =
+  'Opaque payment handle. Omit on the first call. If the call returns ' +
+  'PAYMENT_REQUIRED, pass the exact handle from that response here after ' +
+  'the user has paid.';
+
+/** Zod 4 schemas carry `_zod`; Zod 3 schemas do not. The SDK tells them apart the same way. */
+function isZod4(schema: unknown): boolean {
+  return typeof schema === 'object' && schema !== null && '_zod' in schema;
+}
+
+/**
+ * The handle field, in the same flavour as the author's own fields. Getting
+ * this wrong is not cosmetic: the SDK throws "Mixed Zod versions detected in
+ * object shape" at registration. An empty shape gets Zod 4, which is what the
+ * SDK itself defaults to.
+ */
+function handleField(shape: ZodRawShapeCompat): ZodSchemaCompat {
+  const fields = Object.values(shape);
+  const zod3 = fields.length > 0 && fields.every((f) => !isZod4(f));
+  return zod3
+    ? z3.string().optional().describe(HANDLE_DESCRIPTION)
+    : z4.string().optional().describe(HANDLE_DESCRIPTION);
+}
 
 export interface PaywallConfig {
   provider: PaymentProvider;
@@ -107,7 +144,7 @@ export interface RegisterableServer {
 /** The config we build for `registerTool`, typed on our side of the boundary. */
 interface ToolRegistration {
   description: string;
-  inputSchema: Record<string, z.ZodTypeAny>;
+  inputSchema: ZodRawShapeCompat;
   annotations: Record<string, unknown>;
 }
 
@@ -122,7 +159,7 @@ export type PaywalledServer<S extends RegisterableServer> = S & {
     name: string,
     description: string,
     pricing: Sku | PaidToolPricing,
-    inputSchema: Record<string, z.ZodTypeAny>,
+    inputSchema: ZodRawShapeCompat,
     annotations: Record<string, unknown>,
     handler: (args: Record<string, unknown>, extra: unknown) => unknown
   ): unknown;
@@ -156,14 +193,7 @@ export function withPaywall<S extends RegisterableServer>(
       description,
       inputSchema: {
         ...inputSchema,
-        [argumentName]: z
-          .string()
-          .optional()
-          .describe(
-            'Opaque payment handle. Omit on the first call. If the call returns ' +
-              'PAYMENT_REQUIRED, pass the exact handle from that response here after ' +
-              'the user has paid.'
-          ),
+        [argumentName]: handleField(inputSchema),
       },
       annotations: { ...annotations, 'xyz.tollbooth/paid': true, 'xyz.tollbooth/sku': sku },
     };

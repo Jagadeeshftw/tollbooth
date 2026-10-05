@@ -1,0 +1,61 @@
+name: Install smoke
+
+# Installs Tollbooth into an empty directory, the way someone following the
+# docs would, and runs a paid tool end to end. See scripts/smoke-install.mjs.
+#
+# The repo's own tests cannot catch what this catches: @tollbooth/mcp 0.1.1
+# passed all of them and broke on install, because the workspace pins zod 3
+# and a fresh project resolves zod 4.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # What a stranger gets today changes when the SDK or zod publish, with no
+  # commit here at all. So the published path runs on a clock as well.
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  # Before publishing: the install line from snippets.ts, with every
+  # @tollbooth package packed from this checkout. Run at the newest versions
+  # npm resolves and at the floor of each peer range we state.
+  packed:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { node: '20', extra: '' }
+          - { node: '24', extra: '' }
+          - { node: '20', extra: '@modelcontextprotocol/sdk@1.23.0 zod@3.25.3' }
+          - { node: '20', extra: '@modelcontextprotocol/sdk@1.23.0 zod@4.0.0' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Install from packed tarballs and run a paid tool
+        run: node --import tsx scripts/smoke-install.mjs --source repo --pack ${{ matrix.extra && format('--extra "{0}"', matrix.extra) || '' }}
+
+  # After publishing: the line scraped off the live site, packages from npm.
+  # Nothing from this checkout is installed; it only supplies the script.
+  published:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install the live site's line from npm and run a paid tool
+        run: node scripts/smoke-install.mjs --source live

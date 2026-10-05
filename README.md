@@ -73,7 +73,49 @@ node examples/research-tools/dist/stdio.js
 ```
 <!-- /snippet:RUN -->
 
-Or put a paywall in front of a tool of your own:
+Or put a paywall in front of a tool of your own. Install:
+
+<!-- snippet:INSTALL (generated from site/content/snippets.ts) -->
+```bash
+npm install @tollbooth/mcp @tollbooth/core @tollbooth/moove @tollbooth/store-sqlite @modelcontextprotocol/sdk zod
+```
+<!-- /snippet:INSTALL -->
+
+Wrap the server once:
+
+<!-- snippet:WITH_PAYWALL (generated from site/content/snippets.ts) -->
+```ts
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import { definePrice } from '@tollbooth/core';
+import { withPaywall } from '@tollbooth/mcp';
+import { MooveClient, MooveProvider } from '@tollbooth/moove';
+import { SqliteEntitlementStore } from '@tollbooth/store-sqlite';
+
+const store = new SqliteEntitlementStore({ path: './tollbooth.sqlite' });
+
+const provider = new MooveProvider({
+  client: new MooveClient({ apiKey: process.env.MOOVE_API_KEY! }),
+  store,
+  prices: [
+    definePrice({
+      sku: 'research',
+      unit: 'credit_pack',
+      amount: '10.00',      // decimal string, never a number
+      credits: 250,
+      label: 'Research tools — 250 credits',
+    }),
+  ],
+});
+
+const server = withPaywall(
+  new McpServer({ name: 'my-server', version: '0.1.0' }),
+  { provider, store }
+);
+```
+<!-- /snippet:WITH_PAYWALL -->
+
+Then register a paid tool:
 
 <!-- snippet:TOOL (generated from site/content/snippets.ts) -->
 ```ts

@@ -16,6 +16,15 @@ export MOOVE_API_KEY=mk_live_...
 
 node examples/research-tools/dist/stdio.js`;
 
+/**
+ * The one install line, everywhere it appears: the landing hero, the docs
+ * quickstart, and the root, example and @tollbooth/mcp READMEs. It installs
+ * every package WITH_PAYWALL and TOOL import, which
+ * `scripts/sync-generated.mjs --check` enforces, and it is what the
+ * install-from-npm smoke test scrapes off the live site and runs.
+ */
+export const INSTALL = `npm install @tollbooth/mcp @tollbooth/core @tollbooth/moove @tollbooth/store-sqlite @modelcontextprotocol/sdk zod`;
+
 export const TOOL = `server.paidTool(
   'fetch_readable',
   'Fetch a web page and return its readable text.',
@@ -35,6 +44,7 @@ export const CLIENT = `{
 }`;
 
 export const WITH_PAYWALL = `import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
 import { definePrice } from '@tollbooth/core';
 import { withPaywall } from '@tollbooth/mcp';
 import { MooveClient, MooveProvider } from '@tollbooth/moove';

@@ -44,4 +44,6 @@ export type {
   PaywallConfig,
   PaywalledServer,
   RegisterableServer,
+  ZodRawShapeCompat,
+  ZodSchemaCompat,
 } from './paywall.js';

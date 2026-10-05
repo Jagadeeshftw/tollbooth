@@ -8,8 +8,7 @@ import { Button } from "./button";
 import { Badge } from "./badge";
 import { CopyButton } from "./docs/copy-button";
 import { REPO, WRITEUP, trials } from "@/content/measurements";
-
-const INSTALL = "npm install @tollbooth/mcp";
+import { INSTALL } from "@/content/snippets";
 
 const structured = trials.shapes[0];
 const text = trials.shapes[1];
@@ -24,11 +23,20 @@ export const Hero = () => (
       <span className="text-brand">We measured it.</span>
     </Heading>
 
-    <div className="mt-6 flex items-center gap-2 rounded-lg border border-divide bg-gray-100 px-4 py-2 font-mono text-sm text-charcoal-900 dark:bg-neutral-900 dark:text-neutral-200">
+    <div className="mt-6 flex max-w-3xl items-start gap-2 rounded-lg border border-divide bg-gray-100 px-4 py-2 font-mono text-sm text-charcoal-900 dark:bg-neutral-900 dark:text-neutral-200">
       <span aria-hidden className="text-gray-500 dark:text-neutral-500">
         $
       </span>
-      <span>{INSTALL}</span>
+      {/* The install-from-npm smoke test reads this attribute off the live site and runs it.
+          Each package is one unbreakable unit, so a wrapped line never splits a name. */}
+      <span data-install-command={INSTALL} className="min-w-0 text-left">
+        {INSTALL.split(" ").map((part, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && " "}
+            <span className="whitespace-nowrap">{part}</span>
+          </React.Fragment>
+        ))}
+      </span>
       <CopyButton text={INSTALL} />
     </div>
     <p className="mt-2 text-xs text-gray-600 dark:text-neutral-400">

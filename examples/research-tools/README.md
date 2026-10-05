@@ -75,6 +75,14 @@ export const PRICES = [
 ];
 ```
 
+To do the same in a project of your own, the packages are on npm:
+
+<!-- snippet:INSTALL (generated from site/content/snippets.ts) -->
+```bash
+npm install @tollbooth/mcp @tollbooth/core @tollbooth/moove @tollbooth/store-sqlite @modelcontextprotocol/sdk zod
+```
+<!-- /snippet:INSTALL -->
+
 Change the tools. `paidTool` takes the same arguments as an ordinary
 `registerTool`, plus a sku and a per-call cost:
 
