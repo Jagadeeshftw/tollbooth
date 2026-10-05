@@ -189,7 +189,9 @@ export const Results = () => (
         <p className="mt-3 font-mono text-xs text-gray-600 dark:text-neutral-400">
           tx:{" "}
           {live.txHash && live.txUrl ? (
-            <Link href={live.txUrl} className="text-brand underline-offset-2 hover:underline" target="_blank" rel="noreferrer">
+            // A 66-character hash has no break points; without break-all it
+            // pushes a phone-width page sideways.
+            <Link href={live.txUrl} className="break-all text-brand underline-offset-2 hover:underline" target="_blank" rel="noreferrer">
               {live.txHash}
             </Link>
           ) : (
