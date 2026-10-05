@@ -190,9 +190,11 @@ export interface PriceCatalogEntry {
 }
 
 /**
- * Read-only: what this tenant's own server has actually charged for, derived
- * from `charge_opened` events already ingested — never configured here, and
- * never fed back to the tenant's server. A `(tool, sku)` pair can reprice
+ * What this tenant's own server has actually charged for, derived from
+ * `charge_opened` events already ingested: observed prices, not configured
+ * ones. The dashboard shows these beside an editor, and an edit there is
+ * separate state (`setPriceConfig`) that the tenant's server picks up on its
+ * next sync; nothing here is changed by it. A `(tool, sku)` pair can reprice
  * over time; this reports whatever amount was most recently seen, not a
  * history of every price it has ever had.
  */
