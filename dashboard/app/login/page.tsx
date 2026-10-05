@@ -1,3 +1,5 @@
+import { LockupHorizontalCompact } from '../../components/lockup-horizontal-compact.generated';
+
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_state: 'That sign-in link expired or was already used. Try again.',
   sign_in_failed: 'GitHub sign-in failed. Try again.',
@@ -34,7 +36,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         }}
       >
         <div className="wordmark" style={{ justifyContent: 'center' }}>
-          <span className="wordmark-name">Tollbooth</span>
+          <LockupHorizontalCompact className="wordmark-lockup" style={{ height: 28 }} />
+          <span className="visually-hidden">Tollbooth</span>
           <span className="wordmark-sub">Gateway</span>
         </div>
         <p style={{ fontSize: 13, color: 'var(--tb-fg-muted)', margin: 0 }}>
