@@ -29,8 +29,18 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+    # Four connections into the one service, because the suites are different
+    # trust domains and must not share a database. The gateway and dashboard
+    # suites run as an ordinary role without BYPASSRLS: a superuser skips
+    # row-level security entirely, so their isolation tests would pass having
+    # tested nothing. The superuser URL exists only for the gateway's one test
+    # that proves it refuses to boot as a superuser. These are throwaway
+    # passwords for a container that lives as long as the job.
     env:
       TOLLBOOTH_TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/tollbooth_test
+      TOLLBOOTH_GATEWAY_TEST_POSTGRES_URL: postgresql://gateway_test_app:gateway_test_app@localhost:5432/gateway_test
+      TOLLBOOTH_GATEWAY_TEST_SUPERUSER_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/gateway_test
+      TOLLBOOTH_DASHBOARD_TEST_POSTGRES_URL: postgresql://gateway_test_app:gateway_test_app@localhost:5432/dashboard_test
 
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +51,24 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Create the gateway and dashboard test databases and role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE DATABASE gateway_test;
+          CREATE DATABASE dashboard_test;
+          CREATE ROLE gateway_test_app LOGIN PASSWORD 'gateway_test_app' NOSUPERUSER NOBYPASSRLS;
+          ALTER DATABASE gateway_test OWNER TO gateway_test_app;
+          ALTER DATABASE dashboard_test OWNER TO gateway_test_app;
+          \c gateway_test
+          ALTER SCHEMA public OWNER TO gateway_test_app;
+          GRANT ALL ON SCHEMA public TO gateway_test_app;
+          \c dashboard_test
+          ALTER SCHEMA public OWNER TO gateway_test_app;
+          GRANT ALL ON SCHEMA public TO gateway_test_app;
+          SQL
 
       # Runs before anything else: a boundary violation is a design regression,
       # and there is no point typechecking a graph that has already broken the
@@ -59,5 +87,17 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # Every Postgres suite is connected above, so nothing may skip. A skip
+      # here means a connection quietly went missing, which is how 87 gateway
+      # and dashboard tests once sat behind nine "skipped" lines unnoticed.
+      # Totals are summed from the runner's own lines: `ℹ` from Node 22 and
+      # later, `#` from Node 20's TAP output.
       - name: Test
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test-output.log
+          read -r tests pass fail skipped < <(grep -E '^(ℹ|#) (tests|pass|fail|skipped) [0-9]+$' test-output.log \
+            | awk '{s[$2]+=$3} END {print s["tests"]+0, s["pass"]+0, s["fail"]+0, s["skipped"]+0}')
+          echo "tests=$tests pass=$pass fail=$fail skipped=$skipped"
+          if [ "$skipped" -ne 0 ]; then echo "::error::$skipped test(s) skipped; every suite is connected in CI, so nothing should skip"; exit 1; fi
+          if [ "$tests" -eq 0 ]; then echo "::error::no test totals found in the runner output"; exit 1; fi
