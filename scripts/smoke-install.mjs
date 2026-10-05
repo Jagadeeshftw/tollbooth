@@ -18,7 +18,10 @@
  * So this starts from nothing: an empty directory outside the repo, the
  * install line copied verbatim (from the live page, by default), and the code
  * from the README that ships *inside the installed package*. Nothing from the
- * workspace is on the resolution path. The only stand-in is Moove itself,
+ * workspace is on the resolution path. It settles twice: once by polling, on
+ * the agent's retry, and once on a signed webhook, through the handler in the
+ * README that ships inside the installed @tollbooth/moove. The only stand-in
+ * is Moove itself,
  * whose HTTP API is answered in-process so no real link is created and no key
  * is needed; everything above the fetch call is the published code.
  */
@@ -105,7 +108,13 @@ step('the "Use" example from node_modules/@tollbooth/mcp/README.md');
 const readme = readFileSync(join(dir, 'node_modules/@tollbooth/mcp/README.md'), 'utf8');
 const use = readme.match(/## Use\s+```js\n([\s\S]*?)```/);
 if (!use) fail('the installed README has no "## Use" js block to run');
-writeFileSync(join(dir, 'server.mjs'), `${use[1]}\nexport default server;\n`);
+writeFileSync(join(dir, 'server.mjs'), `${use[1]}\nexport default server;\nexport { provider };\n`);
+
+step('the "Webhooks" example from node_modules/@tollbooth/moove/README.md');
+const mooveReadme = readFileSync(join(dir, 'node_modules/@tollbooth/moove/README.md'), 'utf8');
+const hook = mooveReadme.match(/## Webhooks[\s\S]*?```js\n([\s\S]*?)```/);
+if (!hook) fail('the installed @tollbooth/moove README has no "## Webhooks" js block; the published package does not document webhooks');
+writeFileSync(join(dir, 'webhook.mjs'), hook[1]);
 
 // 4. Drive it like an agent: list, call unpaid, pay, retry with the handle.
 writeFileSync(
@@ -122,7 +131,7 @@ globalThis.fetch = async (input, init = {}) => {
   if (init.method === 'POST' && url.pathname === '/v1/payment-link') {
     const body = JSON.parse(String(init.body));
     const id = 'lnk_smoke_' + (links.size + 1);
-    links.set(id, { toAmount: body.toAmount, paid: false });
+    links.set(id, { toAmount: body.toAmount, description: body.description ?? null, paid: false });
     return json({ id, url: 'https://pay.moove.xyz/' + id });
   }
   const m = url.pathname.match(/^\\/v1\\/payment-link\\/([^/]+)$/);
@@ -134,6 +143,7 @@ globalThis.fetch = async (input, init = {}) => {
       token: { address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', decimals: 6, symbol: 'USDC', name: 'USD Coin', logo: null,
         isNative: false, isStablecoin: true, currencyCode: 'USD', commodityCode: null,
         chain: { id: '8453', name: 'Base', symbol: 'ETH', chainType: 'EVM', logo: '' } },
+      description: l.description,
       status: l.paid ? 'completed' : 'active',
       ...(l.paid ? { receivedAmount: l.toAmount } : {}),
     });
@@ -169,6 +179,55 @@ console.log('link marked paid');
 const second = await client.callTool({ name: retry.tool, arguments: { ...callArgs, [retry.argument]: retry.value } });
 if (second.isError) throw new Error('paid retry failed: ' + JSON.stringify(second.content).slice(0, 400));
 console.log('paid retry returned:', JSON.stringify(second.content));
+console.log('POLLING PATH OK');
+
+// The webhook path: a new unpaid call, settled by Moove's signed delivery
+// before the agent retries. Signed here the way Moove documents it, HMAC-SHA256
+// over "<timestamp>.<raw body>" keyed by the whole whsec_ secret, not by the
+// package under test.
+const { createHmac, randomBytes } = await import('node:crypto');
+const { provider } = await import('./server.mjs');
+const { handleMooveWebhook } = await import('./webhook.mjs');
+process.env.MOOVE_WEBHOOK_SECRET = 'whsec_smoke_' + randomBytes(12).toString('hex');
+
+const third = await client.callTool({ name: tool.name, arguments: callArgs });
+const retry2 = third.structuredContent?.retry;
+if (!third.isError || !retry2) throw new Error('second unpaid call was not challenged');
+const linkId = [...links.keys()].at(-1);
+const link = links.get(linkId);
+if (!link.description) throw new Error('the link was created without the description the webhook settles by');
+link.paid = true;
+const event = {
+  id: 'evt_smoke_' + randomBytes(6).toString('hex'),
+  type: 'payment_link.completed',
+  createdAt: new Date().toISOString(),
+  data: { paymentLinkId: linkId, status: 'completed', amount: link.toAmount, receivedAmount: link.toAmount, currentUsage: 1, maxUsage: 1,
+    chainId: '8453', tokenAddress: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', description: link.description },
+};
+const raw = JSON.stringify(event);
+const timestamp = String(Math.floor(Date.now() / 1000));
+const signature = 'v1=' + createHmac('sha256', process.env.MOOVE_WEBHOOK_SECRET).update(timestamp + '.' + raw).digest('hex');
+const headers = { 'moove-signature': signature, 'moove-timestamp': timestamp, 'moove-event-id': event.id };
+
+const tampered = handleMooveWebhook(provider, raw.replace('"completed"', '"completed" '), headers);
+if (tampered.status !== 401) throw new Error('a tampered delivery was answered ' + tampered.status + ', not 401');
+const unsigned = handleMooveWebhook(provider, raw, { 'moove-timestamp': timestamp });
+if (unsigned.status !== 401) throw new Error('an unsigned delivery was answered ' + unsigned.status + ', not 401');
+console.log('tampered and unsigned deliveries: 401');
+
+const delivered = handleMooveWebhook(provider, Buffer.from(raw), headers);
+if (delivered.status !== 200) throw new Error('the signed delivery was answered ' + delivered.status);
+const settled = await delivered.settle();
+if (!settled.handled || settled.outcome.status !== 'granted') throw new Error('the webhook did not grant: ' + JSON.stringify(settled).slice(0, 300));
+console.log('webhook granted the charge before any retry');
+const again = await handleMooveWebhook(provider, Buffer.from(raw), headers).settle();
+if (!again.handled || again.outcome.status !== 'already_granted') throw new Error('a duplicate delivery was not idempotent: ' + JSON.stringify(again).slice(0, 300));
+console.log('duplicate delivery: already_granted');
+
+const fourth = await client.callTool({ name: retry2.tool, arguments: { ...callArgs, [retry2.argument]: retry2.value } });
+if (fourth.isError) throw new Error('retry after the webhook failed: ' + JSON.stringify(fourth.content).slice(0, 400));
+console.log('retry after webhook returned:', JSON.stringify(fourth.content));
+console.log('WEBHOOK PATH OK');
 await client.close();
 console.log('END TO END OK');
 `
