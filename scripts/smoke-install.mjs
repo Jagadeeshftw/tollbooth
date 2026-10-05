@@ -68,7 +68,11 @@ if (!/^npm install( [@a-z0-9][a-z0-9._\-/@^~]*)+$/.test(line)) fail(`refusing to
 // 2. An empty project, nowhere near the repo.
 const dir = mkdtempSync(join(tmpdir(), 'tollbooth-smoke-'));
 step(`empty project at ${dir}`);
-const run = (cmd, argv, opts = {}) => execFileSync(cmd, argv, { cwd: dir, stdio: 'inherit', ...opts });
+// An empty npm cache of its own, as on a machine that has never installed
+// these packages: a warm cache can serve a stale "latest" for minutes after a
+// publish, which would test the old version while reporting the new line.
+const env = { ...process.env, npm_config_cache: join(dir, '.npm-cache') };
+const run = (cmd, argv, opts = {}) => execFileSync(cmd, argv, { cwd: dir, stdio: 'inherit', env, ...opts });
 run('npm', ['init', '-y'], { stdio: 'ignore' });
 run('npm', ['pkg', 'set', 'type=module']);
 
