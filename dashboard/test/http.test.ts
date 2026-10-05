@@ -9,6 +9,7 @@ import {
   ingestBatch,
   issueSession,
   issueTenantIngestToken,
+  revokeIngestToken,
   setPriceConfig,
   upsertTenantForGithubUser,
 } from '@tollbooth/gateway-server';
@@ -76,6 +77,24 @@ if (!CONNECTION_STRING) {
       ...over,
     };
   }
+
+  describe('the tokens page', () => {
+    // The list is headed "Active tokens". A revoked token was rejected at
+    // ingest but came back in that list on the next visit, so revoking one
+    // looked like it had not worked.
+    it('lists only active tokens: a revoked token does not come back', async () => {
+      const t = await tenant('tokens-page-tenant');
+      const active = await issueTenantIngestToken(db, t.id);
+      const revoked = await issueTenantIngestToken(db, t.id);
+      assert.equal(await revokeIngestToken(db, t.id, revoked.record.id), true);
+
+      const res = await fetch(`${BASE_URL}/tokens`, { redirect: 'manual', headers: { cookie: sessionCookie(t.id) } });
+      assert.equal(res.status, 200);
+      const html = await res.text();
+      assert.ok(html.includes(active.record.id), 'the active token is listed');
+      assert.ok(!html.includes(revoked.record.id), 'the revoked token is not listed, nor sent to the page');
+    });
+  });
 
   describe('the auth gate', () => {
     it('redirects an unauthenticated request for / to /login', async () => {

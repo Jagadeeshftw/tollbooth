@@ -8,7 +8,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function TokensPage() {
   const tenant = await requireTenant();
-  const tokens = await listTenantIngestTokens(gatewayDb(), tenant.id);
+  // The list returns revoked tokens too, with revokedAt set. This page lists
+  // active ones only; a revoked token showing up here again looked like the
+  // revoke had not worked, although ingest already refused it.
+  const tokens = (await listTenantIngestTokens(gatewayDb(), tenant.id)).filter((t) => t.revokedAt === null);
 
   return (
     <section className="view">
