@@ -19,6 +19,7 @@ import {
 import { PostgresEntitlementStore } from '@tollbooth/store-postgres';
 
 import { createServer } from './server.js';
+import { webhookRejectionReason } from './webhook-rejection.js';
 
 const apiKey = process.env['MOOVE_API_KEY'];
 if (!apiKey) {
@@ -220,7 +221,12 @@ const http = createHttpServer(async (req, res) => {
         secret: webhookSecret,
       })
     ) {
-      console.error(`[research-tools] webhook rejected: bad signature or stale timestamp (${headerOf(EVENT_ID_HEADER) ?? 'no id'})`);
+      const reason = webhookRejectionReason({
+        signature: headerOf(SIGNATURE_HEADER),
+        timestamp: headerOf(TIMESTAMP_HEADER),
+        nowSeconds: Date.now() / 1000,
+      });
+      console.error(`[research-tools] webhook rejected: ${reason} (${headerOf(EVENT_ID_HEADER) ?? 'no id'})`);
       res.writeHead(401, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: 'invalid signature' }));
       return;
@@ -294,11 +300,11 @@ const http = createHttpServer(async (req, res) => {
 // Its outcomes go to the gateway too: a payer who never retries is settled
 // only here, and the paywall's own onSettlement never sees that.
 //
-// TOLLBOOTH_RECONCILE=off pauses the sweep so the only thing that can grant
-// is an explicit retry — for inspecting a live payment before anything is
-// granted against it. A payer's own retry still settles as normal.
+// TOLLBOOTH_RECONCILE=off pauses the sweep, so only an explicit retry or a
+// signed webhook can grant — for watching a live payment settle by one path
+// at a time. A payer's own retry and Moove's webhook still settle as normal.
 if (process.env['TOLLBOOTH_RECONCILE'] === 'off') {
-  console.error('[research-tools] reconciler: paused (TOLLBOOTH_RECONCILE=off); only retries settle');
+  console.error('[research-tools] reconciler: paused (TOLLBOOTH_RECONCILE=off); only retries and webhooks settle');
 } else {
   const reconciler = setInterval(() => {
     provider
