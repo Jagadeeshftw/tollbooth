@@ -182,6 +182,96 @@ function svgSource(file) {
   return { body, viewBox };
 }
 
+// 1f. the horizontal lockups, rearranged from the supplied artwork
+//
+// The stacked lockup cannot go in a header: its name is 13% of its height. So
+// headers and wide cards use a horizontal arrangement of the same traced
+// paths — the mark, then TOLLBOOTH beside it, and METERED beneath the name in
+// the full variant only (in a header it would be about 7px tall). Each path
+// is sorted into mark, name or tagline by where it sits, and placed through a
+// crop window; no glyph is redrawn, so re-tracing the artwork re-flows here.
+/** The exact bounds of a potrace path: cubic extrema solved, not control points. */
+function pathBBox(d) {
+  const tok = d.match(/[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/g) ?? [];
+  let i = 0, x = 0, y = 0, sx = 0, sy = 0, cmd = '';
+  const xs = [], ys = [];
+  const num = () => Number(tok[i++]);
+  const at = (nx, ny) => { xs.push(nx); ys.push(ny); };
+  // Where a cubic's derivative is zero on one axis, inside (0, 1).
+  const extrema = (a, b, c, e) => {
+    const A = -a + 3 * b - 3 * c + e, B = 2 * (a - 2 * b + c), C0 = b - a;
+    if (Math.abs(A) < 1e-12) return Math.abs(B) < 1e-12 ? [] : [-C0 / B];
+    const disc = B * B - 4 * A * C0;
+    if (disc < 0) return [];
+    const r = Math.sqrt(disc);
+    return [(-B + r) / (2 * A), (-B - r) / (2 * A)];
+  };
+  const cubicAt = (a, b, c, e, t) => (1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * b + 3 * (1 - t) * t * t * c + t ** 3 * e;
+  while (i < tok.length) {
+    if (/[a-zA-Z]/.test(tok[i])) cmd = tok[i++];
+    const rel = cmd === cmd.toLowerCase();
+    const C = cmd.toUpperCase();
+    const ox = rel ? x : 0, oy = rel ? y : 0;
+    if (C === 'Z') { x = sx; y = sy; continue; }
+    if (C === 'M' || C === 'L') {
+      x = ox + num(); y = oy + num(); at(x, y);
+      if (C === 'M') { sx = x; sy = y; cmd = rel ? 'l' : 'L'; }
+    } else if (C === 'H') { x = ox + num(); at(x, y); }
+    else if (C === 'V') { y = oy + num(); at(x, y); }
+    else if (C === 'C') {
+      const x1 = ox + num(), y1 = oy + num(), x2 = ox + num(), y2 = oy + num(), x3 = ox + num(), y3 = oy + num();
+      at(x3, y3);
+      for (const t of extrema(x, x1, x2, x3)) if (t > 0 && t < 1) xs.push(cubicAt(x, x1, x2, x3, t));
+      for (const t of extrema(y, y1, y2, y3)) if (t > 0 && t < 1) ys.push(cubicAt(y, y1, y2, y3, t));
+      x = x3; y = y3;
+    } else throw new Error(`unsupported path command ${cmd} in lockup.svg; extend pathBBox`);
+  }
+  return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+}
+{
+  const src = readFileSync(join(ROOT, 'packages/design/logo/lockup.svg'), 'utf8');
+  const group = /<g transform="translate\(0\.000000,1250\.000000\) scale\(0\.100000,-0\.100000\)"/.test(src);
+  if (!group) throw new Error('lockup.svg no longer has the potrace group transform the horizontal lockups assume');
+  // Path coordinates are potrace's: x/10, and y flipped about 1250 after /10.
+  const paths = [...src.matchAll(/<path d="([^"]+)"\s*\/>/g)].map((m) => {
+    const b = pathBBox(m[1].replace(/\s+/g, ' '));
+    return { d: m[1], box: { x0: b.x0 / 10, x1: b.x1 / 10, y0: 1250 - b.y1 / 10, y1: 1250 - b.y0 / 10 } };
+  });
+  // Crop windows in the artwork's 1381x1250 viewBox, and where each lands.
+  const PART = {
+    mark: { crop: [324, 10, 742, 799], test: (cy) => cy < 880 },
+    name: { crop: [10, 942, 1361, 169], test: (cy) => cy >= 880 && cy < 1140 },
+    tagline: { crop: [364, 1173, 665, 67], test: (cy) => cy >= 1140 },
+  };
+  const parts = { mark: [], name: [], tagline: [] };
+  for (const p of paths) {
+    const cy = (p.box.y0 + p.box.y1) / 2;
+    const key = Object.keys(PART).find((k) => PART[k].test(cy));
+    const [cx, cyy, cw, ch] = PART[key].crop;
+    // Exact outline bounds. Up to one unit of overhang (a twelfth of a pixel in
+    // a header) is drawn anyway, because each window has visible overflow.
+    if (p.box.x0 < cx - 1 || p.box.x1 > cx + cw + 1 || p.box.y0 < cyy - 1 || p.box.y1 > cyy + ch + 1) {
+      throw new Error(`a ${key} path in lockup.svg falls outside its crop window; the horizontal lockups would clip it: ${JSON.stringify(p.box)} vs ${PART[key].crop}`);
+    }
+    parts[key].push(p.d);
+  }
+  if (!parts.mark.length || !parts.name.length || !parts.tagline.length) throw new Error('lockup.svg did not split into mark, name and tagline');
+  const place = (key, x, y, w, h) =>
+    `  <svg x="${x}" y="${y}" width="${w}" height="${h}" viewBox="${PART[key].crop.join(' ')}" overflow="visible">\n` +
+    `    <g transform="translate(0,1250) scale(0.1,-0.1)">\n` +
+    parts[key].map((d) => `      <path d="${d.replace(/\s+/g, ' ')}"/>`).join('\n') +
+    `\n    </g>\n  </svg>`;
+  const lockupFile = (variant, body) =>
+    `<!-- GENERATED from packages/design/logo/lockup.svg by scripts/sync-generated.mjs — do not edit. ${variant} -->\n` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 471.2 100" fill="currentColor" role="img" aria-label="Tollbooth">\n${body}\n</svg>\n`;
+  sync(join(ROOT, 'packages/design/logo/lockup-horizontal.svg'),
+    lockupFile('Horizontal, with METERED: for 64px tall and up.', [place('mark', 0, 0, 92.9, 100), place('name', 116.9, 10, 354.3, 44), place('tagline', 116.9, 70, 168.7, 17)].join('\n')),
+    'packages/design/logo/lockup-horizontal.svg', 'source');
+  sync(join(ROOT, 'packages/design/logo/lockup-horizontal-compact.svg'),
+    lockupFile('Horizontal, compact: for headers.', [place('mark', 0, 0, 92.9, 100), place('name', 116.9, 28, 354.3, 44)].join('\n')),
+    'packages/design/logo/lockup-horizontal-compact.svg', 'source');
+}
+
 const component = (name, file, extra) => {
   const { body, viewBox } = svgSource(file);
   return (
@@ -203,8 +293,29 @@ for (const [target, name, file, extra] of [
   ['site/components/lockup.generated.tsx', 'Lockup', 'packages/design/logo/lockup.svg', ''],
   ['video/src/mark.generated.tsx', 'Mark', 'packages/design/logo/mark.svg', "import React from 'react';\n\n"],
   ['video/src/lockup.generated.tsx', 'Lockup', 'packages/design/logo/lockup.svg', "import React from 'react';\n\n"],
+  ['site/components/lockup-horizontal-compact.generated.tsx', 'LockupHorizontalCompact', 'packages/design/logo/lockup-horizontal-compact.svg', ''],
+  ['dashboard/components/lockup-horizontal-compact.generated.tsx', 'LockupHorizontalCompact', 'packages/design/logo/lockup-horizontal-compact.svg', ''],
+  ['video/src/lockup-horizontal.generated.tsx', 'LockupHorizontal', 'packages/design/logo/lockup-horizontal.svg', "import React from 'react';\n\n"],
+  ['video/src/lockup-horizontal-compact.generated.tsx', 'LockupHorizontalCompact', 'packages/design/logo/lockup-horizontal-compact.svg', "import React from 'react';\n\n"],
 ]) {
   sync(join(ROOT, target), component(name, file, extra), target, 'source');
+}
+
+// 1g. the favicon set -> the dashboard
+//
+// Built into site/public by scripts/build-logo-assets.mjs from mark.svg. The
+// dashboard is a separate deployment with its own public/, and had no icon at
+// all; copied rather than rebuilt so the two tabs can never show different marks.
+mkdirSync(join(ROOT, 'dashboard/public'), { recursive: true });
+for (const icon of ['favicon.ico', 'favicon-16.png', 'favicon-32.png', 'favicon-48.png', 'icon-192.png', 'apple-touch-icon.png']) {
+  const from = join(ROOT, 'site/public', icon);
+  const to = join(ROOT, 'dashboard/public', icon);
+  const expected = readFileSync(from);
+  const current = (() => { try { return readFileSync(to); } catch { return Buffer.alloc(0); } })();
+  if (expected.equals(current)) continue;
+  if (check) { console.error(`DRIFT: dashboard/public/${icon}`); drift++; continue; }
+  copyFileSync(from, to);
+  console.log(`wrote dashboard/public/${icon}`);
 }
 
 // 2. snippets -> example README

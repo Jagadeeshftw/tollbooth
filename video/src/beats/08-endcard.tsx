@@ -1,56 +1,46 @@
 import React from 'react';
 
 import { Stage } from '../components';
-import { font, palette, type } from '../design';
-import { Lockup } from '../lockup.generated';
-import { SITE } from '../measurements.generated';
+import { palette, type } from '../design';
+import { LockupHorizontal } from '../lockup-horizontal.generated';
+import { REPO, SITE } from '../measurements.generated';
 import { useElement } from '../motion';
 import type { BeatProps } from '../timeline';
 
+/**
+ * The full horizontal lockup carries the name and the one tagline (METERED) as
+ * artwork. What it is follows as a plain sentence in body type — a
+ * description, not a second tagline competing with the artwork's.
+ */
 export const EndCard: React.FC<BeatProps> = ({ durationInFrames: d }) => {
-  const mark = useElement(0, d);
-  const wordmark = useElement(8, d);
-  const url = useElement(24, d);
+  const lockup = useElement(0, d);
+  const line = useElement(10, d);
+  const site = useElement(22, d);
+  const links = useElement(30, d);
 
   return (
     <Stage>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-        {/* The supplied lockup carries the name and the tagline as artwork, so
-            the end card does not set them as type a second time. */}
-        <div style={{ ...mark, color: palette.fg, lineHeight: 0 }}>
-          <Lockup height={330} />
+        <div style={{ ...lockup, color: palette.fg, lineHeight: 0 }}>
+          <LockupHorizontal height={190} />
         </div>
 
-        <div
-          style={{
-            ...wordmark,
-            fontFamily: font.mono,
-            fontSize: type.label,
-            letterSpacing: '0.16em',
-            textTransform: 'uppercase',
-            color: palette.brand,
-            marginTop: 26,
-          }}
-        >
-          A paywall for MCP servers
+        <div style={{ ...line, fontSize: type.body, color: palette.fgMuted, marginTop: 44 }}>
+          A paywall for MCP servers.
         </div>
 
         {/*
-          Deliberately not the mono face: DM Mono slashes its zero, and this is
-          a URL someone has to read off a screen and type. Legibility wins over
-          the house monospace here.
+          Deliberately not the mono face: DM Mono slashes its zero, and these
+          are addresses someone has to read off a screen and type. Legibility
+          wins over the house monospace here.
         */}
-        <div
-          style={{
-            ...url,
-            fontSize: 58,
-            fontWeight: 600,
-            letterSpacing: '-0.01em',
-            color: palette.brand,
-            marginTop: 56,
-          }}
-        >
+        <div style={{ ...site, fontSize: 58, fontWeight: 600, letterSpacing: '-0.01em', color: palette.brand, marginTop: 64 }}>
           {SITE}
+        </div>
+        <div style={{ ...links, fontSize: type.body, color: palette.fg, marginTop: 18 }}>
+          {SITE}/docs
+          <span style={{ color: palette.fgMuted, margin: '0 22px' }}>·</span>
+          {REPO.replace(/^https:\/\//, '')}
         </div>
       </div>
     </Stage>

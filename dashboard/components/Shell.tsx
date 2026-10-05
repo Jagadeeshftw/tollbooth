@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
+import { LockupHorizontalCompact } from './lockup-horizontal-compact.generated';
+
 function GridIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -126,7 +128,8 @@ export function Shell({ login, children }: { login: string; children: React.Reac
             <MenuIcon />
           </button>
           <div className="wordmark">
-            <span className="wordmark-name">Tollbooth</span>
+            <LockupHorizontalCompact className="wordmark-lockup" />
+            <span className="visually-hidden">Tollbooth</span>
             <span className="wordmark-sub">Gateway</span>
           </div>
         </div>

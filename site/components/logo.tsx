@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { LockupHorizontalCompact } from "./lockup-horizontal-compact.generated";
 import { Mark } from "./mark.generated";
 
 /**
@@ -11,25 +12,18 @@ export const LogoSVG = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 /**
- * The header logo: the mark, with the name and tagline set in the site's own
- * type beside it.
+ * The header logo: the horizontal lockup, compact variant. The mark and the
+ * artwork's own TOLLBOOTH wordmark, rearranged from the supplied lockup by
+ * scripts/sync-generated.mjs; no letter is set in a web font.
  *
- * Not the supplied lockup, and for a measured reason. That artwork stacks the
- * mark over the name over the tagline, and the name occupies 13% of its height
- * — so at a 36px nav bar it renders about 5px tall and at 56px about 7px, when
- * a wordmark needs roughly 14px to read. Using it here would put an
- * illegible smudge in the header. The same artwork is used whole where there is
- * vertical room for it: the og:image and the video end card, where the name
- * lands at 40px and above.
+ * Compact means without METERED. The supplied lockup stacks mark, name and
+ * tagline, and the name is 13% of its height, so in a header it would be a 5px
+ * smudge; laid out horizontally the name is 44% of the height and reads at 11px
+ * in a 26px header. METERED would still be about 4px here, so it appears only
+ * where it can be read: the og:image, title cards and the end card.
  */
 export const Logo = () => (
-  <Link href="/" className="flex items-center gap-2.5" aria-label="Tollbooth home">
-    <Mark className="h-7 w-auto text-charcoal-900 dark:text-white" />
-    <span className="flex flex-col leading-none">
-      <span className="text-xl font-medium tracking-tight">Tollbooth</span>
-      <span className="font-mono text-[10px] tracking-[0.18em] text-gray-500 uppercase dark:text-neutral-400">
-        Metered.
-      </span>
-    </span>
+  <Link href="/" className="flex items-center" aria-label="Tollbooth home">
+    <LockupHorizontalCompact className="h-[26px] w-auto text-charcoal-900 dark:text-white" />
   </Link>
 );

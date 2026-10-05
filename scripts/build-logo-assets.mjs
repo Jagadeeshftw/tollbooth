@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 /**
- * Build every raster the brand is needed as, from the two vector sources in
- * packages/design/logo/: mark.svg (the mark alone) and lockup.svg (mark, name
- * and tagline).
+ * Build every raster the brand is needed as, from the vector sources in
+ * packages/design/logo/: mark.svg (the mark alone), and lockup-horizontal.svg
+ * (mark, name and tagline, generated from lockup.svg by `npm run sync`).
  *
- *   node scripts/build-logo-assets.mjs
+ *   node --import tsx scripts/build-logo-assets.mjs
+ *
+ * Under tsx because the og:image reads its figures from
+ * site/content/measurements.ts and its colours from the generated theme, the
+ * same two sources the site and the video use. Nothing on it is typed here.
  *
  * Writes into site/public/: the favicons a browser asks for (.ico with 16/32/48
  * inside, plus the PNGs modern browsers prefer), the phone icons, a maskable
@@ -48,12 +52,14 @@ function inner(file) {
 }
 
 const MARK = inner('packages/design/logo/mark.svg');
-const LOCKUP = inner('packages/design/logo/lockup.svg');
+const LOCKUP = inner('packages/design/logo/lockup-horizontal.svg');
+const { theme } = await import(join(ROOT, 'video/src/theme.generated.ts'));
+const { trials, SITE } = await import(join(ROOT, 'site/content/measurements.ts'));
 
 const work = mkdtempSync(join(tmpdir(), 'tollbooth-logo-'));
 mkdirSync(OUT, { recursive: true });
 
-function shot(name, html, width, height, background) {
+function shot(name, html, width, height, background, extra = []) {
   const file = join(work, `${name}.html`);
   writeFileSync(file, html);
   const out = join(work, `${name}.png`);
@@ -66,6 +72,7 @@ function shot(name, html, width, height, background) {
       `--screenshot=${out}`,
       `--window-size=${width},${height}`,
       `--default-background-color=${background ?? '00000000'}`,
+      ...extra,
       `file://${file}`,
     ],
     { stdio: ['ignore', 'ignore', 'ignore'] }
@@ -153,24 +160,31 @@ write('social-avatar-512.png', icon('avatar', MARK, 512, { pad: 0.18, bg: '#1111
 // --- og:image -------------------------------------------------------------
 // 1200x630 is what Discord, Telegram, Slack and X all crop from. They render it
 // small, so this is deliberately four things and no more: the lockup, one line
-// of what it is, the measurement, and the domain.
-const ogArt = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${LOCKUP.viewBox}" width="330" style="color:#ffffff;display:block">${LOCKUP.body}</svg>`;
-const og = page(
-  'width:1200px;height:630px;background:#0a0a0a;font-family:Inter Display,Inter,ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif;color:#fff;position:relative',
-  `<div style="position:absolute;inset:0 0 auto 0;height:6px;background:#14b8a6"></div>
-   <div style="display:flex;align-items:center;gap:72px;padding:96px 96px 0">
+// of what it is, the measurement, and the domain. The lockup is the full
+// horizontal one, the only place outside the video where METERED is drawn,
+// because at 120px tall it reads.
+const shape = (s) => `<span style="color:${s.retried > 0 ? theme.brand : theme.warn}">${s.retried}/${s.n}</span>`;
+const dot = `<span style="color:${theme.line}"> · </span>`;
+const ogArt = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${LOCKUP.viewBox}" height="120" fill="currentColor" style="color:${theme.fg};display:block">${LOCKUP.body}</svg>`;
+const fontFace = ['Regular:400', 'SemiBold:600']
+  .map((f) => f.split(':'))
+  .map(([n, w]) => `@font-face{font-family:'Inter Display';font-weight:${w};src:url('file://${join(ROOT, `site/fonts/inter-display/InterDisplay-${n}.ttf`)}')}`)
+  .join('');
+const og =
+  `<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=block"><style>${fontFace}</style></head>` +
+  `<body style="margin:0;width:1200px;height:630px;background:${theme.bg};font-family:'Inter Display',ui-sans-serif,sans-serif;color:${theme.fg};position:relative">
+   <div style="position:absolute;inset:0 0 auto 0;height:6px;background:${theme.brand}"></div>
+   <div style="padding:92px 96px 0">
      ${ogArt}
-     <div>
-       <div style="font-size:34px;color:#a3a3a3;margin-bottom:28px">A paywall layer for MCP servers.</div>
-       <div style="font-family:DM Mono,ui-monospace,Menlo,monospace;font-size:34px">
-         <span style="color:#14b8a6">18/18</span><span style="color:#737373"> · </span><span style="color:#14b8a6">41/43</span><span style="color:#737373"> · </span><span style="color:#c2410c">0/10</span>
-       </div>
-       <div style="font-size:24px;color:#a3a3a3;margin-top:24px;max-width:520px;line-height:1.45">Agents retry a payment challenge — 71 blind trials, measured before it was built.</div>
-     </div>
+     <div style="font-size:34px;color:${theme.fgMuted};margin:52px 0 22px">A paywall layer for MCP servers.</div>
+     <div style="font-family:'DM Mono',ui-monospace,monospace;font-size:38px;font-weight:500">${trials.shapes.map(shape).join(dot)}</div>
+     <div style="font-size:24px;color:${theme.fgMuted};margin-top:20px;line-height:1.45">Agents retry a payment challenge — ${trials.scored} blind trials, measured before it was built.</div>
    </div>
-   <div style="position:absolute;left:96px;bottom:54px;font-family:DM Mono,ui-monospace,Menlo,monospace;font-size:22px;color:#737373">tollbooth.0xo.in</div>`
-);
-write('og-image.png', readFileSync(shot('og', og, 1200, 630, 'FF0A0A0A')));
+   <div style="position:absolute;right:96px;bottom:54px;font-family:'DM Mono',ui-monospace,monospace;font-size:22px;color:${theme.fgMuted}">${SITE}</div>
+   </body></html>`;
+// Time for the web font to arrive before the screenshot.
+const bg = `FF${theme.bg.replace('#', '').toUpperCase()}`;
+write('og-image.png', readFileSync(shot('og', og, 1200, 630, bg, ['--virtual-time-budget=8000'])));
 
 rmSync(work, { recursive: true, force: true });
-console.log('\nRebuild any time with: node scripts/build-logo-assets.mjs');
+console.log('\nRebuild any time with: node --import tsx scripts/build-logo-assets.mjs');

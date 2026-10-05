@@ -5,6 +5,16 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Tollbooth Gateway',
   description: 'What your paywall did, and the tokens that let your server tell us.',
+  // The site's favicon set, copied into public/ by scripts/sync-generated.mjs.
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: '16x16 32x32 48x48' },
+      { url: '/favicon-32.png', type: 'image/png', sizes: '32x32' },
+      { url: '/favicon-16.png', type: 'image/png', sizes: '16x16' },
+      { url: '/icon-192.png', type: 'image/png', sizes: '192x192' },
+    ],
+    apple: [{ url: '/apple-touch-icon.png', sizes: '180x180' }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
