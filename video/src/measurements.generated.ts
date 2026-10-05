@@ -116,18 +116,20 @@ export const mooveDocumented = {
  * before trusting an old date here; this is a snapshot, not a live query.
  */
 export const built = {
-  measuredOn: "2026-09-26",
+  measuredOn: "2026-10-05",
   method:
     "packagesPublished: counted on npmjs.com under the @tollbooth scope. Tests: `npm run test` across " +
     "every workspace (core, gateway-client, gateway-server, mcp, moove, store-postgres, store-sqlite, " +
-    "dashboard, example-research-tools) against a fresh throwaway Postgres, summed from the runner's " +
-    "own totals on Node 20, 22 and 24 — identical on all three. The skipped ones are the gateway and " +
-    "dashboard Postgres suites, which need their own connection strings and are skipped, never failed, " +
-    "when those are absent.",
+    "dashboard, example-research-tools) against a fresh throwaway Postgres 16, summed from the runner's " +
+    "own totals on Node 20.20.2, 22.23.2 and 24.11.1 — identical on all three. Every Postgres suite " +
+    "connected, so nothing skips: the entitlement store's as the superuser, the gateway's and the " +
+    "dashboard's each in their own database as an ordinary role without BYPASSRLS (a superuser would " +
+    "pass the row-level-security tests by bypassing them), plus the superuser connection the gateway " +
+    "uses to prove it refuses one.",
   packagesPublished: 6,
-  testsPassing: 404,
-  testsSkipped: 9,
-  testsTotal: 413,
+  testsPassing: 494,
+  testsSkipped: 0,
+  testsTotal: 494,
   testFailures: 0,
   /** EntitlementStore backends, conformance-tested identically against the same suite. */
   entitlementStoreBackends: ["in-memory", "SQLite", "Postgres"],

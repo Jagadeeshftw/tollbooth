@@ -11,7 +11,8 @@ import { fileURLToPath } from 'node:url';
  */
 export const CONNECTION_STRING = process.env['TOLLBOOTH_DASHBOARD_TEST_POSTGRES_URL'] ?? '';
 
-export const TEST_PORT = 3411;
+/** Overridable, because a fixed port is only free on a machine running nothing else. */
+export const TEST_PORT = Number(process.env['TOLLBOOTH_DASHBOARD_TEST_PORT'] ?? 3411);
 export const BASE_URL = `http://localhost:${TEST_PORT}`;
 export const SESSION_SECRET = 'dashboard-test-session-secret-never-used-outside-this-suite';
 
@@ -27,6 +28,20 @@ const DASHBOARD_ROOT = fileURLToPath(new URL('..', import.meta.url));
  * HTTP, the only way to exercise that code path honestly.
  */
 export async function startDashboardServer(env: Record<string, string>): Promise<ChildProcess> {
+  // The readiness probe below accepts any server that answers. If one is
+  // already on this port, the suite would quietly test *that* — another app's
+  // dev server, say — and fail for reasons that have nothing to do with this
+  // code, or worse, pass. Refuse instead.
+  const occupied = await fetch(`${BASE_URL}/`, { redirect: 'manual' }).then(
+    () => true,
+    () => false
+  );
+  if (occupied) {
+    throw new Error(
+      `something is already listening on port ${TEST_PORT}; stop it or set TOLLBOOTH_DASHBOARD_TEST_PORT to a free port`
+    );
+  }
+
   const child = spawn('npx', ['next', 'start', '-p', String(TEST_PORT)], {
     cwd: DASHBOARD_ROOT,
     env: { ...process.env, ...env, NODE_ENV: 'production' },
