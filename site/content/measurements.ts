@@ -82,14 +82,20 @@ export const live: {
   txHash: string | null;
   txUrl: string | null;
 } = {
-  measuredAt: null,
-  chain: null,
-  token: null,
-  toAmount: null,
-  receivedAmount: null,
-  settlementLatencySeconds: null,
-  txHash: null,
-  txUrl: null,
+  // One real payment through the deployed server, 2026-10-05: a direct
+  // transfer() from the payer on Base, settled by Moove and delivered to our
+  // endpoint as a signed webhook that granted the credits.
+  measuredAt: "2026-10-05",
+  chain: "Base",
+  token: "USDC",
+  // As Moove's own link record reports them, both read back from the API.
+  toAmount: "1",
+  receivedAmount: "1",
+  // Link creation to the delivering transaction's Base block timestamp. Most
+  // of this is a person opening the link and paying, not the system.
+  settlementLatencySeconds: 976.8,
+  txHash: "0xf9c66c2b87388494cfc3e4467a0b5cace64a13c1dfacb7f9a4b7f2889e8ee364",
+  txUrl: "https://basescan.org/tx/0xf9c66c2b87388494cfc3e4467a0b5cace64a13c1dfacb7f9a4b7f2889e8ee364",
 };
 
 /** What Moove documents. Not measured by us; labelled as documented. */
