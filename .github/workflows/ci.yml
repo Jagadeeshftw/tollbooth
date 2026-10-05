@@ -92,7 +92,11 @@ jobs:
       # and dashboard tests once sat behind nine "skipped" lines unnoticed.
       # Totals are summed from the runner's own lines: `ℹ` from Node 22 and
       # later, `#` from Node 20's TAP output.
+      # A full run takes a few minutes. The cap turns a hang into a failure
+      # instead of six hours of runner time before GitHub cancels it, which
+      # is how a server left running by the dashboard suite went unnoticed.
       - name: Test
+        timeout-minutes: 15
         run: |
           set -o pipefail
           npm test 2>&1 | tee test-output.log

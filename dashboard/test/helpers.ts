@@ -1,4 +1,5 @@
 import { ChildProcess, spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 /**
@@ -17,6 +18,8 @@ export const BASE_URL = `http://localhost:${TEST_PORT}`;
 export const SESSION_SECRET = 'dashboard-test-session-secret-never-used-outside-this-suite';
 
 const DASHBOARD_ROOT = fileURLToPath(new URL('..', import.meta.url));
+/** Next's own CLI, run with this Node directly: no npx, no shell in between. */
+const NEXT_BIN = createRequire(new URL('../package.json', import.meta.url)).resolve('next/dist/bin/next');
 
 /**
  * `currentTenantId`/`requireTenant` call `next/headers`'s `cookies()`, which
@@ -42,10 +45,15 @@ export async function startDashboardServer(env: Record<string, string>): Promise
     );
   }
 
-  const child = spawn('npx', ['next', 'start', '-p', String(TEST_PORT)], {
+  // Started directly and as the leader of its own process group, so stopping
+  // it can signal everything it started. Through `npx` the server sat behind
+  // npm and a shell; on CI's Linux runners killing npx left the server running
+  // and holding this process's pipes, and the suite never exited.
+  const child = spawn(process.execPath, [NEXT_BIN, 'start', '-p', String(TEST_PORT)], {
     cwd: DASHBOARD_ROOT,
     env: { ...process.env, ...env, NODE_ENV: 'production' },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
 
   let stderr = '';
@@ -65,11 +73,33 @@ export async function startDashboardServer(env: Record<string, string>): Promise
       await new Promise((r) => setTimeout(r, 250));
     }
   }
-  child.kill();
+  await stopDashboardServer(child);
   throw new Error(`dashboard server did not become ready within 30s:\n${stderr}`);
 }
 
+/**
+ * Stop the server and everything it started, then let go of its pipes. Safe
+ * on a server that has already exited — waiting for an 'exit' that already
+ * happened would hang just as surely as a server that never dies.
+ */
 export async function stopDashboardServer(child: ChildProcess): Promise<void> {
-  child.kill();
-  await new Promise((resolve) => child.once('exit', resolve));
+  if (child.exitCode === null && child.signalCode === null) {
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    try {
+      process.kill(-child.pid!, 'SIGTERM');
+    } catch {
+      child.kill('SIGTERM');
+    }
+    const forced = setTimeout(() => {
+      try {
+        process.kill(-child.pid!, 'SIGKILL');
+      } catch {
+        // already gone
+      }
+    }, 5_000);
+    await exited;
+    clearTimeout(forced);
+  }
+  child.stdout?.destroy();
+  child.stderr?.destroy();
 }
