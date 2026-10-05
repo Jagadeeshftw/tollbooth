@@ -13,7 +13,8 @@
  * Writes into site/public/: the favicons a browser asks for (.ico with 16/32/48
  * inside, plus the PNGs modern browsers prefer), the phone icons, a maskable
  * icon for Android, a social avatar with a solid background for Telegram, npm,
- * GitHub and X, and the og:image that renders when a link is pasted somewhere.
+ * GitHub and X, the og:image that renders when a link is pasted somewhere, and
+ * the 1500x500 header banner for X.
  *
  * Every raster is produced in two steps: render the vector once at high
  * resolution, then downsample that bitmap to each target size. Asking a browser
@@ -185,6 +186,23 @@ const og =
 // Time for the web font to arrive before the screenshot.
 const bg = `FF${theme.bg.replace('#', '').toUpperCase()}`;
 write('og-image.png', readFileSync(shot('og', og, 1200, 630, bg, ['--virtual-time-budget=8000'])));
+
+// --- X header banner ------------------------------------------------------
+// 1500x500. X lays the profile picture over the bottom-left corner and crops
+// the top and bottom on phones, so everything sits in a centred band and the
+// left third stays empty. The same three things as the og:image, quieter:
+// the lockup, what it is, and the measurement.
+const banner =
+  `<html><head><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=block"><style>${fontFace}</style></head>` +
+  `<body style="margin:0;width:1500px;height:500px;background:${theme.bg};font-family:'Inter Display',ui-sans-serif,sans-serif;color:${theme.fg};position:relative;overflow:hidden">
+   <div style="position:absolute;inset:0 0 auto 0;height:5px;background:${theme.brand}"></div>
+   <div style="position:absolute;left:520px;right:96px;top:0;bottom:0;display:flex;flex-direction:column;justify-content:center">
+     <svg xmlns="http://www.w3.org/2000/svg" viewBox="${LOCKUP.viewBox}" height="104" fill="currentColor" style="color:${theme.fg};display:block;align-self:flex-start">${LOCKUP.body}</svg>
+     <div style="font-size:30px;color:${theme.fgMuted};margin-top:34px">A paywall layer for MCP servers.</div>
+     <div style="font-family:'DM Mono',ui-monospace,monospace;font-size:30px;font-weight:500;margin-top:14px">${trials.shapes.map(shape).join(dot)}<span style="font-family:'Inter Display',sans-serif;font-weight:400;font-size:22px;color:${theme.fgMuted};margin-left:18px">${trials.scored} blind trials</span></div>
+   </div>
+   </body></html>`;
+write('x-banner-1500x500.png', readFileSync(shot('banner', banner, 1500, 500, bg, ['--virtual-time-budget=8000'])));
 
 rmSync(work, { recursive: true, force: true });
 console.log('\nRebuild any time with: node --import tsx scripts/build-logo-assets.mjs');
