@@ -1,5 +1,7 @@
 import React from "react";
 
+import { VIDEO_RUNTIME } from "@/content/measurements";
+
 import { Container } from "./container";
 import { Explainer } from "./explainer";
 import { SectionHeading } from "./section-heading";
@@ -16,10 +18,10 @@ import { SubHeading } from "./subheading";
 export const Watch = () => (
   <Container className="border-divide relative overflow-hidden border-x px-4 py-20 md:px-8" as="section">
     <div id="watch" className="scroll-mt-24" />
-    <SectionHeading>The whole thing, in under two minutes</SectionHeading>
+    <SectionHeading>The whole thing, in {VIDEO_RUNTIME}</SectionHeading>
     <SubHeading className="mx-auto mt-4 max-w-2xl text-center">
-      The measurement, the flow, and what is built. Every figure on screen comes from the same
-      file this page reads.
+      A real payment, from the agent&rsquo;s challenge to the money in the author&rsquo;s wallet.
+      The results on screen come from the same file this page reads.
     </SubHeading>
     <div className="mx-auto mt-10 max-w-3xl">
       <Explainer />

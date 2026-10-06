@@ -48,7 +48,7 @@ export const Explainer = ({
         >
           <Image
             src={poster}
-            alt="Tollbooth explainer — the measurement, the flow and what is built"
+            alt="A frame from the Tollbooth demo: the retry results by challenge shape"
             fill
             sizes="(max-width: 768px) 100vw, 800px"
             className="object-cover"
