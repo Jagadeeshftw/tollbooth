@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export interface RevenueChartDay {
   day: string; // YYYY-MM-DD
@@ -10,9 +10,26 @@ export interface RevenueChartDay {
 export function RevenueChart({ days }: { days: RevenueChartDay[] }) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number; label: string } | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  // Drawn in the box's own pixels, not a fixed viewBox stretched to fit: the
+  // box grows with its panel on a laptop, and a stretched viewBox would stretch
+  // the axis labels with it. 600x168 is only the first paint before measuring.
+  const [size, setSize] = useState({ w: 600, h: 168 });
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const measure = () => {
+      const r = svg.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) setSize((s) => (Math.abs(s.w - r.width) < 0.5 && Math.abs(s.h - r.height) < 0.5 ? s : { w: r.width, h: r.height }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(svg);
+    return () => ro.disconnect();
+  }, []);
 
-  const W = 600;
-  const H = 168;
+  const W = size.w;
+  const H = size.h;
   const padLeft = 34;
   const padBottom = 20;
   const padTop = 8;
@@ -26,7 +43,7 @@ export function RevenueChart({ days }: { days: RevenueChartDay[] }) {
 
   return (
     <div className="chart-wrap" ref={wrapRef}>
-      <svg className="chart-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Daily revenue">
+      <svg ref={svgRef} className="chart-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Daily revenue">
         <line x1={padLeft} y1={padTop + plotH} x2={W - padRight} y2={padTop + plotH} className="chart-axis-line" />
         {[0, niceMax / 2, niceMax].map((v) => {
           const y = padTop + plotH - (v / niceMax) * plotH;

@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto';
 import type { ChildProcess } from 'node:child_process';
 import { after, before, describe, it } from 'node:test';
 
-import type { WireChargeOpenedEvent } from '@tollbooth/gateway-client';
+import { chromium } from 'playwright-core';
+
+import type { WireChargeOpenedEvent, WireSettlementEvent } from '@tollbooth/gateway-client';
 import {
   GatewayDatabase,
   ingestBatch,
@@ -93,6 +95,52 @@ if (!CONNECTION_STRING) {
       const html = await res.text();
       assert.ok(html.includes(active.record.id), 'the active token is listed');
       assert.ok(!html.includes(revoked.record.id), 'the revoked token is not listed, nor sent to the page');
+    });
+  });
+
+  describe('the overview, rendered in a real browser', () => {
+    // The settlement-outcome bars were inline spans: an inline box ignores
+    // width and height, so every tenant saw empty tracks from launch, and no
+    // HTML-level test could tell. This measures the drawn bars in Chrome.
+    it('draws each outcome bar wide in proportion to its count, and never zero-width for a non-zero count', async () => {
+      const t = await tenant('overview-render-tenant');
+      const settled = (chargeRef: string, status: WireSettlementEvent['status']): WireSettlementEvent => ({
+        kind: 'settlement', eventId: randomUUID(), at: Date.now(), status, sku: 'search', chargeRef, amount: '10.00',
+        receivedAmount: status === 'expired' ? null : '10.00', receivedFraction: status === 'expired' ? null : 1, credits: status === 'expired' ? null : 10,
+      });
+      await ingestBatch(db, t.id, [
+        chargeOpened({ chargeRef: 'b'.repeat(64) }), settled('b'.repeat(64), 'granted'),
+        chargeOpened({ chargeRef: 'c'.repeat(64) }), settled('c'.repeat(64), 'expired'),
+      ]);
+
+      // The installed Chrome, not a downloaded browser: CI's runners ship it.
+      const browser = await chromium.launch({ channel: 'chrome', headless: true });
+      try {
+        const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+        const [name, value] = sessionCookie(t.id).split('=');
+        await context.addCookies([{ name: name!, value: value!, url: BASE_URL }]);
+        const page = await context.newPage();
+        const res = await page.goto(`${BASE_URL}/`);
+        assert.equal(res?.status(), 200);
+        const bars = await page.$$eval('.funnel-row', (rows) =>
+          rows.map((r) => ({
+            label: r.querySelector('.funnel-label')!.textContent!.trim(),
+            count: Number(r.querySelector('.funnel-count')!.textContent),
+            fill: r.querySelector('.funnel-fill')!.getBoundingClientRect().width,
+            track: r.querySelector('.funnel-track')!.getBoundingClientRect().width,
+          }))
+        );
+        assert.deepEqual(bars.map((b) => [b.label, b.count]), [['Granted', 1], ['Partial', 0], ['Underpaid', 0], ['Expired', 1]]);
+        const total = bars.reduce((n, b) => n + b.count, 0);
+        for (const b of bars) {
+          assert.ok(b.track > 0, `${b.label}: the track itself is laid out`);
+          if (b.count > 0) assert.ok(b.fill > 0, `${b.label}: a count of ${b.count} must draw a bar, got width ${b.fill}`);
+          else assert.equal(b.fill, 0, `${b.label}: a zero count draws nothing`);
+          assert.ok(Math.abs(b.fill - (b.track * b.count) / total) <= 1, `${b.label}: ${b.fill}px of ${b.track}px for ${b.count} of ${total}`);
+        }
+      } finally {
+        await browser.close();
+      }
     });
   });
 
