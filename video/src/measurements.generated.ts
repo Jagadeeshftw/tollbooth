@@ -21,13 +21,14 @@ export const QUICKSTART = `${REPO}/tree/main/examples/research-tools`;
 export const DESKTOP_TEST = `${REPO}/blob/main/DESKTOP-TEST.md`;
 
 /**
- * The narrated explainer, on YouTube. The silent 150s render in `video/` is the
- * source this was cut from and stays in the repository; this is the one with a
- * voice on it, and the one people are pointed at.
+ * The narrated demo, on YouTube: the one every surface points at (the landing
+ * page and docs facade, the README). The silent render in `video/` is older and
+ * stays in the repository; it is not this film. The runtime is YouTube's own
+ * length for the upload, 150 s.
  */
-export const VIDEO_ID = "b6e7yKd9cKY";
+export const VIDEO_ID = "0M-8QwF-Phw";
 export const VIDEO_URL = `https://youtu.be/${VIDEO_ID}`;
-export const VIDEO_RUNTIME = "1:58";
+export const VIDEO_RUNTIME = "2:30";
 export const SERVER = "https://tollbooth-server-production.up.railway.app";
 export const MOOVE = "https://moove.xyz";
 

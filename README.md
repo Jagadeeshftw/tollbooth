@@ -48,12 +48,12 @@ challenge's token bearer.
 
 <!-- measured:WATCH (generated from site/content/measurements.ts) -->
 <p align="center">
-  <a href="https://youtu.be/b6e7yKd9cKY">
+  <a href="https://youtu.be/0M-8QwF-Phw">
     <img src="site/public/explainer-thumb.jpg" alt="Play the Tollbooth explainer on YouTube" width="640">
   </a>
 </p>
 
-<p align="center"><sub>1:58 on YouTube. Every figure on screen comes from the same file the site reads.</sub></p>
+<p align="center"><sub>2:30 on YouTube. The results on screen come from the same file the site reads.</sub></p>
 <!-- /measured:WATCH -->
 
 ## Quickstart

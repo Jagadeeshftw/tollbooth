@@ -405,7 +405,7 @@ const watchBlock =
   `    <img src="site/public/explainer-thumb.jpg" alt="Play the Tollbooth explainer on YouTube" width="640">\n` +
   `  </a>\n` +
   `</p>\n\n` +
-  `<p align="center"><sub>${VIDEO_RUNTIME} on YouTube. Every figure on screen comes from the same file the site reads.</sub></p>\n` +
+  `<p align="center"><sub>${VIDEO_RUNTIME} on YouTube. The results on screen come from the same file the site reads.</sub></p>\n` +
   `<!-- /measured:WATCH -->`;
 if (rootReadme.includes('<!-- measured:WATCH ')) {
   sync(

@@ -34,7 +34,7 @@ export const Explainer = ({
         <iframe
           className="h-full w-full"
           src={`https://www.youtube-nocookie.com/embed/${VIDEO_ID}?autoplay=1&rel=0&modestbranding=1`}
-          title="Tollbooth — paid MCP tools, paid for by a human, settled on any chain"
+          title="A paywall for MCP servers — Tollbooth, settled on Moove"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           referrerPolicy="strict-origin-when-cross-origin"
           allowFullScreen
