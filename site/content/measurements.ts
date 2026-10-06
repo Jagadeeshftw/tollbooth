@@ -120,16 +120,16 @@ export const built = {
   method:
     "packagesPublished: counted on npmjs.com under the @tollbooth scope. Tests: `npm run test` across " +
     "every workspace (core, gateway-client, gateway-server, mcp, moove, store-postgres, store-sqlite, " +
-    "dashboard, example-research-tools), summed from the runner's own totals in CI run 37371645342 " +
-    "(commit a7dbbea) on Node 20, 22 and 24 — identical on all three. Every Postgres suite connected " +
+    "dashboard, example-research-tools), summed from the runner's own totals in CI run 37520201446 " +
+    "(commit 75f054a) on Node 20, 22 and 24 — identical on all three. Every Postgres suite connected " +
     "in CI's Postgres 16 service, so nothing skips, and the job fails if anything does: the entitlement " +
     "store's as the superuser, the gateway's and the dashboard's each in their own database as an " +
     "ordinary role without BYPASSRLS (a superuser would pass the row-level-security tests by bypassing " +
     "them), plus the superuser connection the gateway uses to prove it refuses one.",
   packagesPublished: 6,
-  testsPassing: 499,
+  testsPassing: 500,
   testsSkipped: 0,
-  testsTotal: 499,
+  testsTotal: 500,
   testFailures: 0,
   /** EntitlementStore backends, conformance-tested identically against the same suite. */
   entitlementStoreBackends: ["in-memory", "SQLite", "Postgres"],
